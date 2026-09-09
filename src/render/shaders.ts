@@ -218,7 +218,11 @@ void main() {
   tone = mix(tone, uFogTone, smoothstep(uFogRange.x, uFogRange.y, vDepth) * uFog);
   vec2 fc = gl_FragCoord.xy;
   if (uBreak > 0.0) {
-    float b = vnoise(fc / 19.0) * 0.6 + vnoise(fc / 61.0) * 0.4;
+    // Mottle lives on the ROCK, not the screen: world-space noise offset by
+    // the object's own hatch seed, so each boulder carries its own blotches
+    // and nothing slides as the camera moves.
+    vec2 wp = vPosW.xz + vPosW.y * 0.7 + uHatchSeed * 11.0;
+    float b = vnoise(wp * 1.1) * 0.6 + vnoise(wp * 0.33 + 4.0) * 0.4;
     tone = clamp(tone - uBreak * (0.75 - b), 0.0, 1.0);
   }
 

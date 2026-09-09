@@ -7,6 +7,10 @@ import { mulberry32 } from "./noise";
 import { loadPacked, PACKED_IDS, type PackedId } from "./models";
 import { FACING } from "../player/figure";
 import { COLORWAYS } from "../render/palette";
+import { buildGolem, type GolemKind } from "../player/golems";
+import { stlEnabled } from "./settings";
+
+const GOLEM_KINDS: GolemKind[] = ["cairn", "shard", "menhir", "spire", "dolmen", "castle", "totem", "wisp", "hound"];
 
 /**
  * Things you can push. Dynamic Rapier bodies with meshes that follow them:
@@ -18,11 +22,13 @@ import { COLORWAYS } from "../render/palette";
  * broadcasts it (see collectOwned / apply); everyone else follows.
  */
 
-/** Rapier density is kg/m³ — rock, not foam. */
-const ROCK_DENSITY = 2400;
-const GOLD_DENSITY = 2600;
+/** Rapier density is kg/m³. Shards are deliberately light (pumice, not
+ *  granite) so a throw actually flies; statues are heavy enough to carry
+ *  but not to hurl. */
+const ROCK_DENSITY = 800;
+const GOLD_DENSITY = 6000;
 
-type Prop = {
+export type Prop = {
   id: string;
   body: RAPIER.RigidBody;
   collider: RAPIER.Collider;
@@ -45,6 +51,9 @@ const GOLD = COLORWAYS.findIndex((c) => c.name === "Gold Leaf");
 export class Props {
   private readonly all = new Set<Prop>();
   private readonly byId = new Map<string, Prop>();
+  private readonly byCollider = new Map<number, Prop>();
+  /** Ids of props currently carried by THIS client (always owned). */
+  readonly heldIds = new Set<string>();
   readonly root = new THREE.Group();
   private readonly q = new THREE.Quaternion();
   /** Fired with the velocity change (m/s) when an awake prop is knocked. */
@@ -80,10 +89,14 @@ export class Props {
       const x = cx * CHUNK + 4 + rng() * (CHUNK - 8);
       const z = cz * CHUNK + 4 + rng() * (CHUNK - 8);
       if (Math.hypot(x, z) > 6 && this.terrain.isOpen(x, z)) {
-        const id = PACKED_IDS[Math.floor(rng() * PACKED_IDS.length)]!;
         const yaw = rng() * Math.PI * 2;
         this.plinth(cp, x, z);
-        void this.relic(cp, id, x, z, yaw);
+        if (stlEnabled() && rng() < 0.4) {
+          void this.relic(cp, PACKED_IDS[Math.floor(rng() * PACKED_IDS.length)]!, x, z, yaw);
+        } else {
+          const kind = GOLEM_KINDS[Math.floor(rng() * GOLEM_KINDS.length)]!;
+          this.golemRelic(cp, kind, Math.floor(rng() * 1e6), x, z, yaw);
+        }
       }
     }
     return cp;
@@ -103,6 +116,44 @@ export class Props {
     const col = world.createCollider(R.ColliderDesc.cylinder(h / 2, 0.62).setFriction(0.9), body);
     cp.statics.push({ body, collider: col });
     cp.props.push({ id: `${cp.key}:plinth`, body, collider: col, mesh, material: null, geometry: geo, dynamic: false, spawn: { x, y, z }, lastV: new THREE.Vector3() });
+  }
+
+  /** A miniature of one of the cave's own characters, in gold, on the plinth. */
+  private golemRelic(cp: ChunkProps, kind: GolemKind, seed: number, x: number, z: number, yaw: number): void {
+    const geo = buildGolem(kind, seed);
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox!;
+    const statueH = 0.8;
+    const scale = statueH / (bb.max.y - bb.min.y);
+    const centre = new THREE.Vector3();
+    bb.getCenter(centre);
+    const material = makeFigureMaterial(this.p);
+    setFigureColorway(material, GOLD);
+    material.uniforms.uMinY.value = bb.min.y;
+    material.uniforms.uMaxY.value = bb.max.y;
+    const color = new THREE.Mesh(geo, material);
+    anchorHatch(this.p, color, 0.3);
+    const hull = new THREE.Mesh(geo, this.p.hullMat);
+    this.p.ndHidden.add(hull);
+    const carrier = new THREE.Group();
+    carrier.add(color, hull);
+    carrier.scale.setScalar(scale);
+    carrier.position.set(-centre.x * scale, -centre.y * scale, -centre.z * scale);
+    const holder = new THREE.Group();
+    holder.add(carrier);
+    // Sparse hull points in holder space.
+    const src = geo.attributes.position as THREE.BufferAttribute;
+    const pts: number[] = [];
+    for (let i = 0; i < src.count; i += 7) {
+      pts.push((src.getX(i) - centre.x) * scale, (src.getY(i) - centre.y) * scale, (src.getZ(i) - centre.z) * scale);
+    }
+    const arr = new Float32Array(pts);
+    let hullMinY = Infinity;
+    for (let i = 1; i < arr.length; i += 3) hullMinY = Math.min(hullMinY, arr[i]!);
+    const y = this.terrain.floor(x, z) + 0.5 - hullMinY + 0.01;
+    const prop = this.makeDynamic(`${cp.key}:r`, geo, arr, x, y, z, yaw, null, GOLD_DENSITY, holder);
+    prop.material = material;
+    cp.props.push(prop);
   }
 
   private async relic(cp: ChunkProps, id: PackedId, x: number, z: number, yaw: number): Promise<void> {
@@ -169,7 +220,27 @@ export class Props {
     const prop: Prop = { id, body, collider, mesh: obj, material: null, geometry: geo, dynamic: true, spawn: { x, y, z }, lastV: new THREE.Vector3() };
     this.all.add(prop);
     this.byId.set(id, prop);
+    this.byCollider.set(collider.handle, prop);
     return prop;
+  }
+
+  fromCollider(handle: number): Prop | undefined {
+    return this.byCollider.get(handle);
+  }
+
+  /** Pick up: the body follows the hand kinematically until dropped. */
+  hold(prop: Prop): void {
+    prop.body.setBodyType(this.ph.R.RigidBodyType.KinematicPositionBased, true);
+    this.heldIds.add(prop.id);
+  }
+
+  /** Let go with a velocity (a throw, or the carrier's own motion). */
+  drop(prop: Prop, vel: { x: number; y: number; z: number }): void {
+    prop.body.setBodyType(this.ph.R.RigidBodyType.Dynamic, true);
+    prop.body.setLinvel(vel, true);
+    prop.body.setAngvel({ x: (Math.random() - 0.5) * 2, y: (Math.random() - 0.5) * 2, z: (Math.random() - 0.5) * 2 }, true);
+    prop.lastV.set(vel.x, vel.y, vel.z);
+    this.heldIds.delete(prop.id);
   }
 
   /** Copy body transforms into meshes (awake bodies only); detect knocks. */
@@ -200,8 +271,9 @@ export class Props {
     for (const prop of this.all) {
       if (!prop.dynamic) continue;
       const t = prop.body.translation();
-      if (!isOwner(t.x, t.z)) continue;
-      const asleep = prop.body.isSleeping();
+      const held = this.heldIds.has(prop.id);
+      if (!held && !isOwner(t.x, t.z)) continue;
+      const asleep = !held && prop.body.isSleeping();
       if (asleep) {
         if (!snapshot) continue;
         const moved = Math.hypot(t.x - prop.spawn.x, t.y - prop.spawn.y, t.z - prop.spawn.z) > 0.05;
@@ -220,7 +292,7 @@ export class Props {
     for (const s of states) {
       const prop = this.byId.get(s.k);
       if (!prop || !prop.dynamic) continue;
-      if (isOwner(s.p[0], s.p[2])) continue; // mine — my simulation is the truth
+      if (this.heldIds.has(s.k) || isOwner(s.p[0], s.p[2])) continue; // mine — my simulation is the truth
       prop.body.setTranslation({ x: s.p[0], y: s.p[1], z: s.p[2] }, true);
       prop.body.setRotation({ x: s.q[0], y: s.q[1], z: s.q[2], w: s.q[3] }, true);
       prop.body.setLinvel({ x: s.v[0], y: s.v[1], z: s.v[2] }, true);
@@ -233,6 +305,8 @@ export class Props {
     for (const prop of cp.props) {
       this.all.delete(prop);
       this.byId.delete(prop.id);
+      this.byCollider.delete(prop.collider.handle);
+      this.heldIds.delete(prop.id);
       this.root.remove(prop.mesh);
       prop.mesh.traverse((o) => { if ((o as THREE.Mesh).isMesh) this.p.ndHidden.delete(o); });
       prop.geometry?.dispose();

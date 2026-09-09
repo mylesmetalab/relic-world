@@ -3,6 +3,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { anchorHatch, disposeFigureMaterial, makeFigureMaterial, setFigureColorway, type Pipeline } from "../render/pipeline";
 import { loadPacked, type PackedId } from "../world/models";
 import { buildGolem, GOLEM_MOTION, type GolemKind } from "./golems";
+import { stlEnabled } from "../world/settings";
 
 /**
  * A figure — the player's body, or another player's. Two kinds:
@@ -29,6 +30,12 @@ export const CHARACTERS = [
   { id: "golem-hound", name: "Hound" },
 ] as const;
 export type CharacterId = (typeof CHARACTERS)[number]["id"];
+
+/** The cast you can cycle through: the cave's own characters, plus the STL
+ *  miniatures only when that toggle is on. */
+export function availableCharacters(): ReadonlyArray<(typeof CHARACTERS)[number]> {
+  return stlEnabled() ? CHARACTERS : CHARACTERS.filter((c) => c.id.startsWith("golem-"));
+}
 
 /** Old saves / old builds used golem-1..3. */
 export function normaliseCharacter(id: string): CharacterId {

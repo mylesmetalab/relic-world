@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { Simplex2, clamp, lerp, mulberry32, smoothstep } from "./noise";
 import { BIOMES, biomeAt, biomeIdAt, type Biome } from "./biomes";
+import { CFG } from "./config";
 
 /**
  * The cave as two height fields. `floor(x,z)` is the walkable surface and the
@@ -14,8 +15,6 @@ import { BIOMES, biomeAt, biomeIdAt, type Biome } from "./biomes";
 
 export const CHUNK = 24; // metres per chunk
 export const CELLS = 24; // cells per chunk edge (1 m)
-const FLOOR_BASE = 3.0;
-const CEIL_BASE = 11.5;
 /** Rooms open up around the spawn so you never start inside a wall. */
 const SPAWN_CLEAR = 9;
 
@@ -47,20 +46,21 @@ export class Terrain {
     const b = this.biome(x, z);
     const d = Math.hypot(x, z);
     const pad = smoothstep(2.5, 9, d);
-    const broad = this.floorLo.fbm(x / 26, z / 26, 4) * 2.4 * b.relief;
-    const chop = this.floorHi.fbm(x / 5.5, z / 5.5, 2) * 0.55;
+    const W = CFG.world;
+    const broad = this.floorLo.fbm(x / W.dunes, z / W.dunes, 4) * 2.4 * b.relief;
+    const chop = this.floorHi.fbm(x / W.chop, z / W.chop, 2) * 0.55;
     if (b.terrace > 0) {
       // Steps with a slightly rough tread; the risers are what you climb.
       const stepped = Math.round(broad / b.terrace) * b.terrace;
-      return FLOOR_BASE + (stepped + chop * 0.35) * pad;
+      return W.floorBase + (stepped + chop * 0.35) * pad;
     }
-    return FLOOR_BASE + (broad + chop) * pad;
+    return W.floorBase + (broad + chop) * pad;
   }
 
   ceiling(x: number, z: number): number {
-    const broad = this.ceilLo.fbm(x / 34, z / 34, 3) * 3.4;
+    const broad = this.ceilLo.fbm(x / 34, z / 34, 3) * CFG.world.ceilRelief;
     const chop = this.ceilHi.fbm(x / 6, z / 6, 2) * 0.7;
-    return CEIL_BASE + broad + chop;
+    return CFG.world.ceilBase + broad + chop;
   }
 
   /** 0..1 — how much this column is solid rock (wall / pillar). */
@@ -74,7 +74,7 @@ export class Terrain {
   floor(x: number, z: number): number {
     const open = this.floorOpen(x, z);
     const s = this.solidity(x, z);
-    const wall = smoothstep(0.56, 0.66, s);
+    const wall = smoothstep(CFG.world.wallLo, CFG.world.wallHi, s);
     if (wall <= 0) return open;
     return lerp(open, this.ceiling(x, z) + 0.4, wall);
   }

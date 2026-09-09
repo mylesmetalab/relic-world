@@ -34,7 +34,12 @@ export class Input {
         this.lookY += e.movementY;
       }
     });
-    canvas.addEventListener("mousedown", (e) => { if (e.button === 0) this.dragging = true; });
+    canvas.addEventListener("mousedown", (e) => {
+      if (e.button === 0) {
+        this.dragging = true;
+        if (this.locked) this.pressed.add("Mouse0");
+      }
+    });
     window.addEventListener("mouseup", () => { this.dragging = false; });
   }
 

@@ -44,7 +44,7 @@ export class Net {
   readonly peers = new Map<string, Peer>();
   onJoin: ((id: string) => void) | null = null;
   onLeave: ((id: string) => void) | null = null;
-  private readonly room;
+  readonly room;
   private readonly state;
   private readonly props;
   onProps: ((states: PropState[], peerId: string) => void) | null = null;

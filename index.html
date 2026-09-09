@@ -15,6 +15,9 @@
       #stamina i { display: block; height: 100%; background: repeating-linear-gradient(-45deg, #f2f542 0 2px, transparent 2px 4px); }
       #bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; padding: 8px 14px; background: rgba(10,10,18,0.78); border-top: 1px solid rgba(232,228,208,0.25); color: #e8e4d0; font: 12px/1.6 ui-monospace, Menlo, monospace; pointer-events: none; }
       #bar b { color: #f2f542; font-weight: normal; }
+      #bar button { pointer-events: auto; background: transparent; color: #e8e4d0; border: 1px solid rgba(232,228,208,0.4); font: inherit; padding: 0 8px; cursor: pointer; }
+      #bar button.on { background: #f2f542; color: #0a0a12; border-color: #f2f542; }
+      #tune .tune-check { display: block; margin: 4px 0 6px; }
       #hint { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; color: #e8e4d0; font: 18px/1.7 ui-monospace, Menlo, monospace; background: rgba(10,10,18,0.55); cursor: pointer; }
       #hint small { display: block; font-size: 13px; opacity: 0.75; }
       #hint.hidden { display: none; }
@@ -30,6 +33,21 @@
       #photo button { width: 100%; margin-top: 8px; padding: 6px; background: #f2f542; color: #0a0a12; border: 0; font: inherit; font-weight: bold; cursor: pointer; }
       #photo .status { display: block; margin-top: 6px; min-height: 1.6em; opacity: 0.8; }
       #photo .hint { margin: 6px 0 0; opacity: 0.6; }
+      #map { position: fixed; right: 16px; bottom: 56px; width: min(46vh, 420px); height: min(46vh, 420px); image-rendering: pixelated; border: 2px solid #0a0a12; box-shadow: 4px 4px 0 #0a0a12; background: #e8e4d0; }
+      #tune { position: fixed; left: 12px; top: 96px; bottom: 56px; width: 300px; overflow-y: auto; padding: 10px 12px; background: rgba(10,10,18,0.9); border: 1px solid rgba(232,228,208,0.35); color: #e8e4d0; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+      #tune h2 { margin: 0 0 6px; font-size: 13px; color: #f2f542; }
+      #tune h2 .k { float: right; opacity: 0.6; font-weight: normal; color: #e8e4d0; }
+      #tune .tune-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+      #tune button { padding: 3px 7px; background: #e8e4d0; color: #0a0a12; border: 0; font: inherit; cursor: pointer; }
+      #tune textarea { width: 100%; box-sizing: border-box; background: #0a0a12; color: #e8e4d0; border: 1px solid rgba(232,228,208,0.3); font: 11px ui-monospace, Menlo, monospace; }
+      #tune .status { display: block; min-height: 1.4em; opacity: 0.8; }
+      #tune details { margin: 4px 0; border-top: 1px solid rgba(232,228,208,0.15); padding-top: 4px; }
+      #tune summary { cursor: pointer; color: #f2f542; }
+      #tune summary i { opacity: 0.6; font-style: normal; color: #e8e4d0; }
+      #tune .tune-row { display: grid; grid-template-columns: 96px 1fr 48px; gap: 6px; align-items: center; margin: 2px 0; }
+      #tune .tune-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #tune .tune-row output { text-align: right; opacity: 0.85; }
+      #tune select { width: 100%; }
     </style>
   </head>
   <body>
@@ -38,12 +56,14 @@
     <div id="stamina"><i></i></div>
     <div id="hud"></div>
     <div id="photo" hidden></div>
+    <div id="tune" hidden></div>
+    <canvas id="map" hidden></canvas>
     <input id="chat" type="text" maxlength="120" placeholder="say something… (Enter to send, Esc to cancel)" autocomplete="off" hidden />
     <div id="bar">
       <span><b>WASD</b> move</span><span><b>Shift</b> run</span><span><b>Space</b> jump</span>
       <span><b>push a ledge</b> climb</span><span><b>mouse</b> look</span><span><b>V</b> 1st / 3rd person</span>
-      <span><b>C</b> / <b>⇧C</b> character</span><span><b>Q</b> / <b>E</b> inks</span><span><b>Enter</b> chat</span>
-      <span><b>P</b> photo mode</span><span><b>M</b> mute</span><span><b>R</b> new seed</span><span><b>T</b> spawn</span>
+      <span><b>C</b> / <b>⇧C</b> character</span><span><b>Q</b> / <b>E</b> inks</span><span><b>F</b> grab · <b>click</b> throw</span><span><b>Tab</b> map</span><span><b>Enter</b> chat</span>
+      <span><b>P</b> photo mode</span><span><b>M</b> mute</span><button id="voice" title="Proximity voice chat — opt in; your mic goes to players near you">🎤 voice off</button><span><b>R</b> new seed</span><span><b>T</b> spawn</span>
     </div>
     <div id="hint">click to enter<small>everyone on the same seed shares the cave · rock prints as your torch reaches it</small></div>
     <script type="module" src="/src/main.ts"></script>

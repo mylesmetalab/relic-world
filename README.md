@@ -21,16 +21,22 @@ Click to take the mouse.
 | push into a ledge | climb — a mantle up to about head height; costs stamina, which refills on the ground |
 | **mouse** | look |
 | **V** | first ↔ third person |
-| **C** / **⇧C** | change character — Bast, Rook, Cam, and nine things the cave grew: Cairn, Shard, Menhir, Spire, Dolmen, Castle, Totem, Wisp, Hound |
+| **C** / **⇧C** | change character — nine things the cave grew: Cairn, Shard, Menhir, Spire, Dolmen, Castle, Totem, Wisp, Hound (the STL miniatures Bast, Rook and Cam join the cast via a toggle in the tuning panel) |
 | **Q / E** | your figure's ink colorway |
+| **F** / **click** | grab the prop you're looking at (white outline) · throw it along your look — the dashed arc and landing ring show exactly where it goes |
+| **Tab** | the paper map — the ink map itself, printed in as you explore, with players as dots |
 | **Enter** | chat — what you type streams above your figure as you type; Enter sends, Esc cancels |
+| **\`** | the tuning panel — every number the look and the world are built from; Export gives JSON to paste back, Copy link shares a `?cfg=` URL |
+| **🎤** | proximity voice, opt in — your mic goes to players near you, fading with distance |
 | **P** | photo mode — orbit, press controls, PNG export at print sizes |
 | **M** | mute |
 | **R** / **T** | new seed · back to spawn |
 
-`?seed=123` opens a specific world. **Everyone who opens the same seed is in
-the same cave**: you see each other's figures and torches, and their light
-prints the rock for you too. `?room=name` joins a named room instead.
+With no `?seed=` you land in **the** world — one cave everyone shares, which
+rolls to a new seed every two hours on the clock (the HUD counts down).
+`?seed=123` opens a private world; `?room=name` a private room on any seed.
+Wherever you are, you see the others' figures and torches, their light prints
+the rock for you too, and what they push, you see move.
 
 ## The rules of the place
 

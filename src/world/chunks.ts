@@ -76,6 +76,12 @@ export class ChunkManager {
     this.update(pos, 1000);
   }
 
+  /** Drop every chunk and build the window again (terrain tunables changed). */
+  rebuildAll(pos: THREE.Vector3): void {
+    for (const chunk of [...this.chunks.values()]) this.dispose(chunk);
+    this.buildAll(pos);
+  }
+
   private build(cx: number, cz: number): void {
     const key = `${cx},${cz}`;
     const group = new THREE.Group();

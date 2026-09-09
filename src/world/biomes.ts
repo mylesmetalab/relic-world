@@ -1,4 +1,5 @@
 import { ENVWAYS, type GradientStop } from "../render/palette";
+import { CFG } from "./config";
 
 /**
  * Biomes — regions of the cave that print with a different pen and a
@@ -44,7 +45,9 @@ export const BIOMES: Biome[] = [
 ];
 
 /** World metres per biome-noise unit — mirrors `uBiomeScale` in the shader. */
-export const BIOME_SCALE = 90;
+export function biomeScale(): number {
+  return CFG.world.biomeScale;
+}
 
 // ── The GLSL noise, ported byte-for-byte in intent ──────────────────────
 function fract(x: number): number { return x - Math.floor(x); }
@@ -62,8 +65,8 @@ function vnoise(x: number, y: number): number {
 
 /** 0..1 region value at world (x,z), before quantisation. Must match GLSL. */
 export function biomeField(x: number, z: number, seed: number): number {
-  const px = x / BIOME_SCALE + seed * 0.37;
-  const pz = z / BIOME_SCALE + seed * 0.11;
+  const px = x / CFG.world.biomeScale + seed * 0.37;
+  const pz = z / CFG.world.biomeScale + seed * 0.11;
   const n = vnoise(px, pz) * 0.7 + vnoise(px * 2.3 + 5.1, pz * 2.3 + 1.7) * 0.3;
   // Value noise huddles around 0.5; stretch it so every biome gets land.
   return Math.min(0.999, Math.max(0, (n - 0.5) * 2.2 + 0.5));

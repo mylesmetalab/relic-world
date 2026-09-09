@@ -73,6 +73,16 @@ heightfield per chunk is therefore the entire collision surface for terrain.
   so a hosted build needs a static host without that policy — GitHub Pages
   is the intended one (`.github/workflows/pages.yml`).
 
+### Third pass (2026-09-09, later)
+Shared rolling world; STL cast behind a toggle, procedural cast + golem
+relics by default; grab/throw with white outline, tether, honest ballistic
+arc + landing ring; paper map (Tab); tuning panel (backtick) with JSON
+export/import and `?cfg=` links — CFG in `world/config.ts` is the single
+source the terrain, pipeline and main read; opt-in proximity voice over the
+same WebRTC connections; world-anchored mottle. Next: stacked caves and
+hatched-wall climbing, torch shrines, two-torch doors, relics → colorways,
+comic-panel photo mode, deeper-is-stranger, STL drop-in.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

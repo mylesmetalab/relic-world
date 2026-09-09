@@ -67,6 +67,17 @@ export function removeStatic(ph: Physics, h: StaticHandle): void {
   ph.world.removeRigidBody(h.body);
 }
 
+/** First collider along a ray: distance + collider handle, or null. */
+export function rayHit(
+  ph: Physics, origin: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number },
+  maxDist: number, exclude?: RAPIER.RigidBody,
+): { toi: number; handle: number } | null {
+  const ray = new ph.R.Ray(origin, dir);
+  const hit = ph.world.castRay(ray, maxDist, true, undefined, undefined, undefined, exclude);
+  if (!hit) return null;
+  return { toi: hit.timeOfImpact, handle: hit.collider.handle };
+}
+
 /** Distance along `dir` (unit) from `origin` to the first collider, or null.
  *  `exclude` skips the player's own body. */
 export function rayDistance(

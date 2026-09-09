@@ -7,7 +7,8 @@ import {
   INK_VERTEX, INK_FRAGMENT, VAULT_VERTEX, VAULT_FRAGMENT,
 } from "./shaders";
 import { bakeGradientToRGBA, COLORWAYS, type Colorway, type GradientStop } from "./palette";
-import { BIOMES, BIOME_SCALE } from "../world/biomes";
+import { BIOMES, biomeScale } from "../world/biomes";
+import { CFG } from "../world/config";
 import { InkMap } from "../world/inkmap";
 
 /**
@@ -103,7 +104,7 @@ function makeToonMaterial(
       uPaper: { value: new THREE.Color(PAPER) },
       uBiomeRamps: { value: shared.biomeRamps },
       uBiomeCount: { value: BIOMES.length },
-      uBiomeScale: { value: BIOME_SCALE },
+      uBiomeScale: { value: biomeScale() },
       uBiomeSeed: { value: 0 },
       uUseBiomes: { value: useBiomes ? 1 : 0 },
       uPenA: { value: pens.a },
@@ -244,7 +245,7 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pip
       uPaletteTex: { value: bgPaletteTex },
       uBiomeRamps: { value: biomeRamps },
       uBiomeCount: { value: BIOMES.length },
-      uBiomeScale: { value: BIOME_SCALE },
+      uBiomeScale: { value: biomeScale() },
       uBiomeSeed: { value: 0 },
       uUseBiomes: { value: 1 },
       uInkMap: { value: inkMap.texture },
@@ -310,6 +311,37 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pip
     rockMat, ceilMat, hullMat, figureMats: new Set(), bgPaletteTex, biomeRamps, inkMap,
     ndHidden: new Set(), torches: [], printScale, printW: 2, printH: 2, lastW: 0, lastH: 0, lastPrintScale: 0, time: 0,
   };
+}
+
+/** Push every tunable that lives in a uniform (CFG + BIOMES) into the materials. */
+export function applyConfig(p: Pipeline): void {
+  const L = CFG.light, F = CFG.figure, P = CFG.press;
+  const pens = penUniforms();
+  for (const m of [p.rockMat, p.ceilMat, ...p.figureMats]) {
+    const u = m.uniforms;
+    u.uBiomeScale.value = biomeScale();
+    if (u.uPenA) { u.uPenA.value = pens.a; u.uPenB.value = pens.b; }
+  }
+  BIOMES.forEach((b, i) => writeLut(p.biomeRamps, b.ramp, i));
+  const r = p.rockMat.uniforms;
+  r.uFogRange.value.set(L.fogNear, L.fogFar);
+  r.uFog.value = L.fog;
+  r.uFogTone.value = L.fogTone;
+  r.uBreak.value = L.mottle;
+  r.uShadowGamma.value = L.shadowGamma;
+  p.ceilMat.uniforms.uCell.value = L.ceilCell;
+  p.ceilMat.uniforms.uArcSpacing.value = L.ceilArcSpacing;
+  for (const m of p.figureMats) {
+    const u = m.uniforms;
+    u.uHatchRange.value = F.hatchRange; u.uBlack.value = F.black; u.uPitch.value = F.pitch; u.uNib.value = F.nib;
+    u.uRim.value = F.rim; u.uFill.value = F.fill; u.uStipple.value = F.stipple; u.uFormFollow.value = F.formFollow;
+    u.uZoneSoft.value = F.zoneSoft; u.uZoneJitter.value = F.zoneJitter; u.uHiCut.value = F.hiCut; u.uHatchStyle.value = F.hatchStyle;
+  }
+  p.hullMat.uniforms.uThick.value = F.hull;
+  const k = p.inkPass.uniforms;
+  k.uMisreg.value = P.misreg; k.uEdgeW.value = P.edgeW; k.uDepthCut.value = P.depthCut; k.uNormalCut.value = P.normalCut;
+  k.uGrain.value = P.grain; k.uSpeck.value = P.speck; k.uHalftone.value = P.halftone; k.uHalftoneScale.value = P.halftoneScale; k.uHalftoneAngle.value = P.halftoneAngle;
+  p.printScale = P.printScale;
 }
 
 export function setWorldSeed(p: Pipeline, seed: number): void {
