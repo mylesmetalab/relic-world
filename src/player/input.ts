@@ -5,6 +5,7 @@ export class Input {
   lookX = 0;
   lookY = 0;
   locked = false;
+  private dragging = false;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener("keydown", (e) => {
@@ -18,15 +19,26 @@ export class Input {
     document.addEventListener("pointerlockchange", () => {
       this.locked = document.pointerLockElement === canvas;
     });
+    // Pointer lock when we can get it; otherwise drag-to-look with the left
+    // button (hosts that refuse pointer lock, trackpads in embedded views).
     window.addEventListener("mousemove", (e) => {
-      if (!this.locked) return;
-      this.lookX += e.movementX;
-      this.lookY += e.movementY;
+      if (this.locked || (this.dragging && (e.buttons & 1))) {
+        this.lookX += e.movementX;
+        this.lookY += e.movementY;
+      }
     });
+    canvas.addEventListener("mousedown", (e) => { if (e.button === 0) this.dragging = true; });
+    window.addEventListener("mouseup", () => { this.dragging = false; });
   }
 
   requestLock(): void {
-    if (!this.locked) void this.canvas.requestPointerLock?.();
+    if (this.locked) return;
+    try {
+      const r = this.canvas.requestPointerLock?.() as unknown as Promise<void> | undefined;
+      r?.catch?.(() => {});
+    } catch {
+      /* host refuses pointer lock — drag-to-look stays available */
+    }
   }
 
   /** True once per key press. */

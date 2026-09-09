@@ -20,8 +20,12 @@ const staminaBar = stamina.firstElementChild as HTMLElement;
 const url = new URL(location.href);
 const seed = Number(url.searchParams.get("seed") ?? 7) || 7;
 const roomOverride = url.searchParams.get("room") ?? undefined;
-const LOCAL_REACH = 17;
-const REMOTE_REACH = 12;
+// How far a torch prints the rock. The bare-paper edge sits at the reach; the
+// tone fades from ~45% of it. Generous, so the unprinted world is a horizon,
+// not a wall in your face.
+const LOCAL_REACH = 34;
+const REMOTE_REACH = 22;
+const INK_STAMP = 26;
 
 type Remote = {
   figure: Figure;
@@ -81,9 +85,14 @@ async function boot(): Promise<void> {
 
   const photo = new PhotoMode(p, ph, canvas, figure, () => input.requestLock());
 
-  canvas.addEventListener("click", () => { if (!photo.active) input.requestLock(); });
-  hint.addEventListener("click", () => input.requestLock());
-  document.addEventListener("pointerlockchange", () => hint.classList.toggle("hidden", input.locked || photo.active));
+  // The overlay goes on the first click regardless — some hosts (embedded
+  // browsers, iframes) refuse pointer lock, and drag-to-look covers them.
+  const dismiss = () => {
+    hint.classList.add("hidden");
+    if (!photo.active) input.requestLock();
+  };
+  canvas.addEventListener("click", dismiss);
+  hint.addEventListener("click", dismiss);
 
   const wish = new THREE.Vector3();
   const fwd = new THREE.Vector3();
@@ -168,7 +177,7 @@ async function boot(): Promise<void> {
     torchPos.y += 2.2;
     p.torches.length = 0;
     p.torches.push({ position: torchPos, reach: LOCAL_REACH });
-    p.inkMap.stamp(player.position.x, player.position.z, 13);
+    p.inkMap.stamp(player.position.x, player.position.z, INK_STAMP);
 
     // ── Peers ────────────────────────────────────────────────────────
     const k = 1 - Math.exp(-dt * 10);
@@ -188,7 +197,7 @@ async function boot(): Promise<void> {
       }
       if (r.figure.colorway !== st.i) r.figure.setColorway(st.i);
       if (p.torches.length < 4) p.torches.push({ position: r.torch, reach: REMOTE_REACH });
-      p.inkMap.stamp(r.pos.x, r.pos.z, 9);
+      p.inkMap.stamp(r.pos.x, r.pos.z, INK_STAMP * 0.7);
     }
     const mine: PeerState = {
       p: [player.position.x, player.position.y, player.position.z],
