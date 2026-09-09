@@ -3,6 +3,7 @@ import { anchorHatch, type Pipeline } from "../render/pipeline";
 import { addConvexHull, addHeightfield, removeStatic, type Physics, type StaticHandle } from "../physics/world";
 import { CHUNK, Terrain, gridGeometry, sampleGrid, scatterRocks } from "./terrain";
 import { hash3 } from "./noise";
+import { Props, type ChunkProps } from "./props";
 
 /** Everything one chunk owns, so it can be dropped in one go. */
 type Chunk = {
@@ -10,6 +11,7 @@ type Chunk = {
   group: THREE.Group;
   statics: StaticHandle[];
   geometries: THREE.BufferGeometry[];
+  props: ChunkProps;
 };
 
 /**
@@ -21,6 +23,7 @@ export class ChunkManager {
   private readonly chunks = new Map<string, Chunk>();
   private readonly pending: Array<[number, number]> = [];
   readonly root = new THREE.Group();
+  readonly props: Props;
 
   constructor(
     private readonly p: Pipeline,
@@ -29,6 +32,7 @@ export class ChunkManager {
     private readonly radius = 2,
   ) {
     p.scene.add(this.root);
+    this.props = new Props(p, ph, terrain);
   }
 
   get count(): number {
@@ -107,13 +111,14 @@ export class ChunkManager {
     }
 
     this.root.add(group);
-    this.chunks.set(key, { key, group, statics, geometries });
+    this.chunks.set(key, { key, group, statics, geometries, props: this.props.spawn(cx, cz, chunkSeed) });
   }
 
   private dispose(chunk: Chunk): void {
     this.root.remove(chunk.group);
     for (const g of chunk.geometries) g.dispose();
     for (const s of chunk.statics) removeStatic(this.ph, s);
+    this.props.dispose(chunk.props);
     this.chunks.delete(chunk.key);
   }
 }

@@ -10,6 +10,7 @@ import { PlayerCamera } from "./player/camera";
 import { CHARACTERS, Figure, type CharacterId } from "./player/figure";
 import { Net } from "./net/room";
 import { PhotoMode } from "./ui/photo";
+import { Chat } from "./ui/chat";
 
 const canvas = document.getElementById("view") as HTMLCanvasElement;
 const hud = document.getElementById("hud") as HTMLDivElement;
@@ -92,9 +93,11 @@ async function boot(): Promise<void> {
     i: figure.colorway,
     s: lastSpeed,
     n: net.name,
+    b: chat.outgoing(),
   }));
 
   const photo = new PhotoMode(p, ph, canvas, figure, () => input.requestLock());
+  const chat = new Chat(p.camera, canvas);
 
   // The overlay goes on the first click regardless — some hosts (embedded
   // browsers, iframes) refuse pointer lock, and drag-to-look covers them.
@@ -130,7 +133,12 @@ async function boot(): Promise<void> {
     resizePipeline(p, canvas.clientWidth, canvas.clientHeight);
 
     // ── Keys ─────────────────────────────────────────────────────────
-    if (input.once("KeyP")) {
+    if (input.once("Enter") && !photo.active) {
+      chat.toggle();
+      input.setCaptured(chat.open);
+    }
+    if (chat.open !== input.captured) input.setCaptured(chat.open); // Esc / blur closed it
+    if (input.once("KeyP") && !chat.open) {
       if (photo.active) photo.exit();
       else photo.enter(cam.yaw, cam.pitch, 4.5);
       hint.classList.toggle("hidden", input.locked || photo.active);
@@ -143,7 +151,7 @@ async function boot(): Promise<void> {
         cam.firstPerson = !cam.firstPerson;
         figure.setVisible(!cam.firstPerson);
       }
-      if (input.once("KeyC")) switchCharacter(1);
+      if (input.once("KeyC")) switchCharacter(input.down.has("ShiftLeft") || input.down.has("ShiftRight") ? -1 : 1);
       let inkChanged = false;
       if (input.once("KeyQ")) { figure.setColorway(figure.colorway - 1); inkChanged = true; }
       if (input.once("KeyE")) { figure.setColorway(figure.colorway + 1); inkChanged = true; }
@@ -177,6 +185,7 @@ async function boot(): Promise<void> {
     }
 
     chunks.update(player.position);
+    chunks.props.update();
     const speed = photo.active ? 0 : Math.hypot(player.velocity.x, player.velocity.z);
     figure.update(player.position, wish, speed, photo.active ? 0 : dt);
     if (photo.active) photo.update(player.position, player.body);
@@ -213,6 +222,14 @@ async function boot(): Promise<void> {
     lastSpeed = speed;
 
     renderFrame(p, dt);
+    // Speech bubbles: mine (unless first person) + every peer's.
+    const heads: Array<{ id: string; head: THREE.Vector3; text: string }> = [];
+    if (!cam.firstPerson) heads.push({ id: "me", head: tmp.set(player.position.x, player.position.y + figure.height + 0.35, player.position.z).clone(), text: chat.outgoing() });
+    for (const [id, r] of remotes) {
+      const st = net.peers.get(id)?.state;
+      heads.push({ id, head: r.pos.clone().setY(r.pos.y + r.figure.height + 0.35), text: st?.b ?? "" });
+    }
+    chat.render(heads);
     input.endFrame();
 
     // ── HUD ──────────────────────────────────────────────────────────
@@ -232,7 +249,7 @@ async function boot(): Promise<void> {
         `<b>Relic World</b> seed ${seed} · ${fps} fps · ${biome}<br>` +
         `you are <span class="peer">${net.name}</span> as ${CHARACTERS[charIndex]!.name} in ${COLORWAYS[figure.colorway]!.name}` +
         (net.count ? ` · with ${peerNames}` : " · alone so far (share the URL)") + `<br>` +
-        `x ${pos.x.toFixed(0)} z ${pos.z.toFixed(0)} · ${player.climbing ? "climbing" : player.grounded ? "ground" : "air"} · ${cam.firstPerson ? "1st" : "3rd"} person · inked ${(p.inkMap.coverage() * 100).toFixed(1)}%`;
+        `x ${pos.x.toFixed(0)} z ${pos.z.toFixed(0)} · ${player.climbing ? "climbing" : player.grounded ? "ground" : "air"} · ${cam.firstPerson ? "1st" : "3rd"} person · inked ${(p.inkMap.coverage() * 100).toFixed(1)}% · props ${chunks.props.count}`;
     }
     requestAnimationFrame(frame);
   };

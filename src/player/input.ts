@@ -5,11 +5,18 @@ export class Input {
   lookX = 0;
   lookY = 0;
   locked = false;
+  /** While true (chat open) game keys are ignored and released. */
+  captured = false;
   private dragging = false;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener("keydown", (e) => {
       if (e.repeat) return;
+      if (this.captured) {
+        // Only the chat's own keys matter now; the line itself stops propagation.
+        if (e.code === "Enter" || e.code === "Escape") this.pressed.add(e.code);
+        return;
+      }
       this.down.add(e.code);
       this.pressed.add(e.code);
       if (e.code === "Space") e.preventDefault();
@@ -66,5 +73,10 @@ export class Input {
 
   endFrame(): void {
     this.pressed.clear();
+  }
+
+  setCaptured(on: boolean): void {
+    this.captured = on;
+    if (on) this.down.clear();
   }
 }

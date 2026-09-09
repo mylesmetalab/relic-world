@@ -61,6 +61,7 @@ export class PlayerController {
     this.cc.setMaxSlopeClimbAngle((52 * Math.PI) / 180);
     this.cc.setMinSlopeSlideAngle((56 * Math.PI) / 180);
     this.cc.setApplyImpulsesToDynamicBodies(true);
+    this.cc.setCharacterMass(85);
     this.syncPosition();
   }
 

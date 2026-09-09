@@ -6,15 +6,22 @@
     <title>Relic World</title>
     <style>
       html, body { margin: 0; height: 100%; background: #0a0a12; overflow: hidden; }
-      canvas#view { display: block; width: 100vw; height: 100vh; }
-      #hud { position: fixed; left: 12px; bottom: 12px; color: #e8e4d0; font: 12px/1.5 ui-monospace, Menlo, monospace; opacity: 0.85; pointer-events: none; text-shadow: 0 1px 0 #000; }
+      canvas#view { display: block; width: 100vw; height: 100vh; outline: none; }
+      #hud { position: fixed; left: 12px; top: 12px; color: #e8e4d0; font: 12px/1.5 ui-monospace, Menlo, monospace; opacity: 0.85; pointer-events: none; text-shadow: 0 1px 0 #000; }
       #hud b { color: #f2f542; }
       #hud .peer { color: #46e0c8; }
-      #stamina { position: fixed; left: 12px; bottom: 74px; width: 120px; height: 8px; border: 1px solid #e8e4d0; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+      #stamina { position: fixed; left: 12px; top: 72px; width: 120px; height: 8px; border: 1px solid #e8e4d0; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
       #stamina.show { opacity: 0.9; }
       #stamina i { display: block; height: 100%; background: repeating-linear-gradient(-45deg, #f2f542 0 2px, transparent 2px 4px); }
-      #hint { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: #e8e4d0; font: 15px/1.7 ui-monospace, Menlo, monospace; background: rgba(10,10,18,0.55); cursor: pointer; }
+      #bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; padding: 8px 14px; background: rgba(10,10,18,0.78); border-top: 1px solid rgba(232,228,208,0.25); color: #e8e4d0; font: 12px/1.6 ui-monospace, Menlo, monospace; pointer-events: none; }
+      #bar b { color: #f2f542; font-weight: normal; }
+      #hint { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; color: #e8e4d0; font: 18px/1.7 ui-monospace, Menlo, monospace; background: rgba(10,10,18,0.55); cursor: pointer; }
+      #hint small { display: block; font-size: 13px; opacity: 0.75; }
       #hint.hidden { display: none; }
+      #chat { position: fixed; left: 50%; bottom: 56px; transform: translateX(-50%); width: min(520px, 80vw); padding: 8px 12px; background: rgba(10,10,18,0.9); border: 1px solid #f2f542; color: #e8e4d0; font: 14px ui-monospace, Menlo, monospace; outline: none; }
+      #bubbles { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+      .bubble { position: absolute; transform: translate(-50%, -100%); max-width: 260px; padding: 6px 10px; background: #e8e4d0; color: #0a0a12; font: 13px/1.35 ui-monospace, Menlo, monospace; border: 2px solid #0a0a12; box-shadow: 3px 3px 0 #0a0a12; word-wrap: break-word; white-space: pre-wrap; }
+      .bubble::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 10px; height: 10px; background: #e8e4d0; border-right: 2px solid #0a0a12; border-bottom: 2px solid #0a0a12; transform: translateX(-50%) rotate(45deg); }
       #photo { position: fixed; right: 12px; top: 12px; width: 240px; padding: 12px 14px; background: rgba(10,10,18,0.86); border: 1px solid rgba(232,228,208,0.35); color: #e8e4d0; font: 12px/1.6 ui-monospace, Menlo, monospace; }
       #photo h2 { margin: 0 0 8px; font-size: 13px; color: #f2f542; }
       #photo h2 .k { float: right; color: #e8e4d0; opacity: 0.6; font-weight: normal; }
@@ -26,11 +33,19 @@
     </style>
   </head>
   <body>
-    <canvas id="view"></canvas>
+    <canvas id="view" tabindex="0"></canvas>
+    <div id="bubbles"></div>
     <div id="stamina"><i></i></div>
     <div id="hud"></div>
     <div id="photo" hidden></div>
-    <div id="hint">click to enter<br>WASD move · Shift run · Space jump · push into a ledge to climb<br>mouse look · V first / third person · C change character · Q/E inks<br>P photo mode · R new seed · T back to spawn<br><small>everyone on the same seed shares the cave</small></div>
+    <input id="chat" type="text" maxlength="120" placeholder="say something… (Enter to send, Esc to cancel)" autocomplete="off" hidden />
+    <div id="bar">
+      <span><b>WASD</b> move</span><span><b>Shift</b> run</span><span><b>Space</b> jump</span>
+      <span><b>push a ledge</b> climb</span><span><b>mouse</b> look</span><span><b>V</b> 1st / 3rd person</span>
+      <span><b>C</b> / <b>⇧C</b> character</span><span><b>Q</b> / <b>E</b> inks</span><span><b>Enter</b> chat</span>
+      <span><b>P</b> photo mode</span><span><b>R</b> new seed</span><span><b>T</b> spawn</span>
+    </div>
+    <div id="hint">click to enter<small>everyone on the same seed shares the cave · rock prints as your torch reaches it</small></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

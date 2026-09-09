@@ -22,6 +22,8 @@ export type PeerState = {
   /** Horizontal speed (for the walk bob). */
   s: number;
   n: string;
+  /** Speech bubble text ("" = none). Drafts stream with a caret. */
+  b: string;
 };
 
 export type Peer = { id: string; state: PeerState; lastAt: number };

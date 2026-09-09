@@ -1,0 +1,1 @@
+{"nv":13857,"nf":30004,"lo":[-14.81118,0,-12.64357],"hi":[14.81118,23.11613,12.64357],"note":"16-bit fixed-point positions over lo..hi, then 16-bit triangle indices; cam decimated from 253894 tris (scripts/pack-stl.mjs)"}
