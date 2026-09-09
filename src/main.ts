@@ -39,6 +39,8 @@ const seedParam = url.searchParams.get("seed");
 const shared = seedParam == null;
 const seed = shared ? sharedSeed() : Number(seedParam) || 7;
 const roomOverride = url.searchParams.get("room") ?? undefined;
+// Single player: `?solo=1`, or any host whose CSP blocks the relays (Metalab Sites).
+const solo = url.searchParams.get("solo") === "1" || /(^|\.)sites\.metalab\.com$/.test(location.hostname);
 const urlCfg = configFromUrl() as { config?: unknown; biomes?: unknown } | null;
 if (urlCfg) {
   loadConfig(urlCfg.config ?? urlCfg);
@@ -104,7 +106,8 @@ async function boot(): Promise<void> {
   applyConfig(p);
 
   const torchPos = new THREE.Vector3(0, 5, 0);
-  const net = new Net(seed, roomOverride);
+  const net = new Net(seed, roomOverride, solo);
+  if (solo) voiceBtn.hidden = true;
   const voice = new Voice(net);
   const remotes = new Map<string, Remote>();
   net.onJoin = (id) => {
@@ -627,7 +630,7 @@ async function boot(): Promise<void> {
       const level = lv === 0 ? "surface" : lv === 1 ? "upper gallery" : "lower cave";
       const peerNames = [...net.peers.values()].map((pe) => `<span class="peer">${pe.state.n}</span>`).join(" · ");
       const roll = msUntilRoll();
-      const rollText = shared ? ` · world rolls in ${Math.floor(roll / 3600000)}h ${String(Math.floor((roll % 3600000) / 60000)).padStart(2, "0")}m` : " · private world";
+      const rollText = solo ? " · single player" : shared ? ` · world rolls in ${Math.floor(roll / 3600000)}h ${String(Math.floor((roll % 3600000) / 60000)).padStart(2, "0")}m` : " · private world";
       const state = player.wallClimb ? "climbing" : player.mantle ? "mantling" : player.grounded ? "ground" : "air";
       hud.innerHTML =
         `<b>Relic World</b> seed ${seed}${rollText} · ${fps} fps · ${biome} · ${level}<br>` +

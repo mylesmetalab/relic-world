@@ -44,6 +44,17 @@ export function nameFor(id: string): string {
   return `${ADJECTIVES[h % ADJECTIVES.length]}-${(h >>> 8) % 100}`;
 }
 
+/** A room that goes nowhere: every action is a no-op, no peers ever arrive. */
+function soloRoom(): ReturnType<typeof joinRoom> {
+  const stub = {
+    makeAction: () => ({ send: async () => [], onMessage: null }),
+    onPeerJoin: null, onPeerLeave: null, onPeerStream: null, onPeerTrack: null,
+    addStream: async () => [], removeStream: () => {}, addTrack: async () => [], removeTrack: () => {}, replaceTrack: async () => [],
+    getPeers: () => ({}), ping: async () => 0, leave: async () => {},
+  };
+  return stub as unknown as ReturnType<typeof joinRoom>;
+}
+
 export class Net {
   readonly selfId = selfId;
   readonly name = nameFor(selfId);
@@ -73,14 +84,22 @@ export class Net {
   /** Count of relay join errors (informational — one relay failing is normal). */
   relayErrors = 0;
 
-  constructor(seed: number, roomOverride?: string) {
+  /** True when running without a room at all (single player). */
+  readonly solo: boolean;
+
+  /** `solo` skips the relays entirely: same API, nothing ever goes out or
+   *  comes in. Used on hosts whose CSP blocks the relays (Metalab Sites). */
+  constructor(seed: number, roomOverride?: string, solo = false) {
+    this.solo = solo;
     const roomId = roomOverride ?? `seed-${seed}`;
-    this.room = joinRoom({ appId: "relic-world-v1" }, roomId, {
-      onJoinError: (err) => {
-        this.relayErrors++;
-        console.warn("[relic-world] relay join error", err);
-      },
-    });
+    this.room = solo
+      ? soloRoom()
+      : joinRoom({ appId: "relic-world-v1" }, roomId, {
+          onJoinError: (err) => {
+            this.relayErrors++;
+            console.warn("[relic-world] relay join error", err);
+          },
+        });
     this.state = this.room.makeAction<PeerState>("state");
     this.state.onMessage = (data, ctx) => {
       const id = ctx.peerId;
