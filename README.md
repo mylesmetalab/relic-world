@@ -45,8 +45,7 @@ prints the rock for you too. `?room=name` joins a named room instead.
   statues on plinths are dynamic bodies at rock density; walk into them and
   they slide and topple. The nearest player simulates a prop and everyone
   else follows, so a shove is shared.
-- **It sounds like paper and rock.** Everything is synthesized: a cave
-  drone, footfalls, jump and land, knocks scaled by impact, a press roller
+- **It sounds like paper and rock.** Everything is synthesized: footfalls, jump and land, knocks scaled by impact, a press roller
   that hums while new rock prints under your torch, and a blip when someone
   starts talking.
 - **Tone picks the ink.** Lighting never shades a colour; it decides which

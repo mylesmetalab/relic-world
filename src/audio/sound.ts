@@ -1,7 +1,6 @@
 /**
  * A synthesized soundscape — no samples. Everything is noise and a handful
  * of oscillators shaped to read as paper, ink and rock:
- *  - a low cave drone with a slow swell,
  *  - footsteps as filtered noise bursts (pitch by surface speed),
  *  - jump / land / mantle thumps,
  *  - prop knocks scaled by impact,
@@ -38,27 +37,6 @@ export class Sound {
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noise.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-
-    // Drone: two detuned lows through a slow-moving filter.
-    const drone = ctx.createGain();
-    drone.gain.value = 0.06;
-    for (const f of [41, 61.7]) {
-      const o = ctx.createOscillator();
-      o.type = "triangle";
-      o.frequency.value = f;
-      const lp = ctx.createBiquadFilter();
-      lp.type = "lowpass";
-      lp.frequency.value = 180;
-      o.connect(lp).connect(drone);
-      o.start();
-    }
-    const swell = ctx.createOscillator();
-    swell.frequency.value = 0.07;
-    const swellGain = ctx.createGain();
-    swellGain.gain.value = 0.03;
-    swell.connect(swellGain).connect(drone.gain);
-    swell.start();
-    drone.connect(this.master);
 
     // Press roller: band-passed noise, level driven by inking rate.
     const src = ctx.createBufferSource();
