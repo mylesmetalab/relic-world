@@ -208,7 +208,7 @@ async function boot(): Promise<void> {
       s: speed,
       n: net.name,
     };
-    net.update(dt, mine);
+    net.update(mine);
 
     renderFrame(p, dt);
     input.endFrame();
@@ -229,7 +229,7 @@ async function boot(): Promise<void> {
       hud.innerHTML =
         `<b>Relic World</b> seed ${seed} · ${fps} fps · ${biome}<br>` +
         `you are <span class="peer">${net.name}</span> as ${CHARACTERS[charIndex]!.name} in ${COLORWAYS[figure.colorway]!.name}` +
-        (net.count ? ` · with ${peerNames}` : net.connected ? " · alone so far (share the URL)" : " · offline") + `<br>` +
+        (net.count ? ` · with ${peerNames}` : " · alone so far (share the URL)") + `<br>` +
         `x ${pos.x.toFixed(0)} z ${pos.z.toFixed(0)} · ${player.climbing ? "climbing" : player.grounded ? "ground" : "air"} · ${cam.firstPerson ? "1st" : "3rd"} person · inked ${(p.inkMap.coverage() * 100).toFixed(1)}%`;
     }
     requestAnimationFrame(frame);

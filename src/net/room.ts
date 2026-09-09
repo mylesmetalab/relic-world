@@ -43,15 +43,17 @@ export class Net {
   onLeave: ((id: string) => void) | null = null;
   private readonly room;
   private readonly state;
-  private sinceSend = 0;
-  connected = true;
+  private latest: PeerState | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  /** Count of relay join errors (informational — one relay failing is normal). */
+  relayErrors = 0;
 
   constructor(seed: number, roomOverride?: string) {
     const roomId = roomOverride ?? `seed-${seed}`;
     this.room = joinRoom({ appId: "relic-world-v1" }, roomId, {
       onJoinError: (err) => {
-        console.warn("[relic-world] room join error", err);
-        this.connected = false;
+        this.relayErrors++;
+        console.warn("[relic-world] relay join error", err);
       },
     });
     this.state = this.room.makeAction<PeerState>("state");
@@ -69,14 +71,19 @@ export class Net {
     this.room.onPeerLeave = (id) => {
       if (this.peers.delete(id)) this.onLeave?.(id);
     };
+    // The heartbeat runs on a timer, not the frame loop: a hidden tab has no
+    // requestAnimationFrame, but its timer still fires (~1 Hz), so a player
+    // who alt-tabs stays standing in everyone else's cave instead of vanishing.
+    this.timer = setInterval(() => this.tick(), 1000 / 12);
   }
 
-  /** Send at most every 1/12 s. */
-  update(dt: number, mine: PeerState): void {
-    this.sinceSend += dt;
-    if (this.sinceSend < 1 / 12) return;
-    this.sinceSend = 0;
-    void this.state.send(mine).catch(() => {});
+  /** Record the latest local state; the timer sends it. */
+  update(mine: PeerState): void {
+    this.latest = mine;
+  }
+
+  private tick(): void {
+    if (this.latest) void this.state.send(this.latest).catch(() => {});
     // Drop peers we haven't heard from in a while (tab closed without leave).
     const now = performance.now();
     for (const [id, peer] of this.peers) {
@@ -92,6 +99,7 @@ export class Net {
   }
 
   leave(): void {
+    if (this.timer) clearInterval(this.timer);
     void this.room.leave();
   }
 }
