@@ -2,11 +2,34 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0a0a12" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Relic World" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <title>Relic World</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #0a0a12; overflow: hidden; }
-      canvas#view { display: block; width: 100vw; height: 100vh; outline: none; }
+      html, body { margin: 0; height: 100%; background: #0a0a12; overflow: hidden; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+      canvas#view { display: block; width: 100vw; height: 100vh; height: 100dvh; outline: none; touch-action: none; }
+      /* Touch layer: a floating stick on the left, a button cluster on the right. */
+      #touch { position: fixed; inset: 0; pointer-events: none; }
+      #touch .stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border: 2px solid rgba(232,228,208,0.6); border-radius: 50%; background: rgba(10,10,18,0.25); }
+      #touch .knob { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: #e8e4d0; box-shadow: 3px 3px 0 #0a0a12; }
+      #touch .cluster { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
+      #touch .row { display: flex; gap: 8px; pointer-events: none; }
+      #touch button { pointer-events: auto; min-width: 58px; height: 58px; padding: 0 12px; border: 2px solid #e8e4d0; border-radius: 50%; background: rgba(10,10,18,0.55); color: #e8e4d0; font: 13px ui-monospace, Menlo, monospace; box-shadow: 3px 3px 0 #0a0a12; touch-action: none; -webkit-tap-highlight-color: transparent; }
+      #touch button.big { min-width: 74px; height: 74px; font-size: 15px; }
+      #touch .row.small button { min-width: 44px; height: 34px; border-radius: 17px; font-size: 11px; box-shadow: 2px 2px 0 #0a0a12; }
+      #touch button.down { background: #e8e4d0; color: #0a0a12; }
+      #touch button.on { background: #f2f542; color: #0a0a12; border-color: #f2f542; }
+      html.touch #bar { display: none; }
+      html.touch #hud { font-size: 11px; }
+      html.touch #hint { font-size: 16px; }
+      html.touch #tune { left: 8px; top: 8px; bottom: 8px; width: min(300px, 70vw); }
       #hud { position: fixed; left: 12px; top: 12px; color: #e8e4d0; font: 12px/1.5 ui-monospace, Menlo, monospace; opacity: 0.85; pointer-events: none; text-shadow: 0 1px 0 #000; }
       #hud b { color: #f2f542; }
       #hud .peer { color: #46e0c8; }
@@ -69,7 +92,7 @@
       <span><b>C</b> / <b>⇧C</b> character</span><span><b>Q</b> / <b>E</b> inks</span><span><b>F</b> grab · <b>click</b> throw / dig</span><span><b>X</b> place torch</span><span><b>G</b> spawn relic</span><span><b>Tab</b> map</span><span><b>Enter</b> chat</span>
       <span><b>P</b> photo mode</span><span><b>M</b> mute</span><button id="voice" title="Proximity voice chat — opt in; your mic goes to players near you">🎤 voice off</button><button id="tuneBtn" title="Tuning panel — every number the look and world are built from (also the ` key)">⚙ tune</button><span><b>R</b> new seed</span><span><b>T</b> spawn</span>
     </div>
-    <div id="hint">click to enter<small>two-finger swipe, arrow keys or right-drag to look — or press L to lock the mouse · everyone shares the cave · rock prints as your torch reaches it</small></div>
+    <div id="hint">click to enter<small class="kb">two-finger swipe, arrow keys or right-drag to look — or press L to lock the mouse · everyone shares the cave · rock prints as your torch reaches it</small><small class="tc" hidden>left thumb moves · right thumb looks · tap digs, hold keeps digging · everyone shares the cave</small></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

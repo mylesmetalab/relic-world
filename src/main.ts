@@ -19,6 +19,7 @@ import { PhotoMode } from "./ui/photo";
 import { Chat } from "./ui/chat";
 import { Tune, applyBiomeDoc } from "./ui/tune";
 import { PaperMap } from "./ui/map";
+import { TouchControls } from "./ui/touch";
 import { TORCH_REACH } from "./world/props";
 
 const canvas = document.getElementById("view") as HTMLCanvasElement;
@@ -236,6 +237,13 @@ async function boot(): Promise<void> {
 
   const photo = new PhotoMode(p, ph, canvas, figure, () => input.requestLock());
   const chat = new Chat(p.camera, canvas);
+  const touch = new TouchControls(input, canvas);
+  if (touch.enabled) {
+    // Phones aim with the crosshair at screen centre; there is no cursor.
+    hint.querySelector<HTMLElement>(".kb")!.hidden = true;
+    hint.querySelector<HTMLElement>(".tc")!.hidden = false;
+    hint.firstChild!.textContent = "tap to enter";
+  }
   const map = new PaperMap(p.inkMap);
   const spawnRelic = () => {
     const x = player.position.x + fwd.x * 2.2, z = player.position.z + fwd.z * 2.2;
@@ -281,7 +289,7 @@ async function boot(): Promise<void> {
   // sits at the centre under pointer lock. Aim rays go through it.
   const mouseNdc = new THREE.Vector2(0, 0);
   window.addEventListener("mousemove", (e) => {
-    if (input.locked) return;
+    if (input.locked || touch.enabled) return;
     mouseNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     aimEl.style.left = `${e.clientX}px`;
     aimEl.style.top = `${e.clientY}px`;

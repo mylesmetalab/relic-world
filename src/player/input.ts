@@ -14,9 +14,24 @@ export class Input {
   wheelLooks = true;
   private dragging = false;
   private rightDown = false;
+  /** Fed by the touch stick; added to the keyboard axes. */
+  readonly touchAxes = { x: 0, z: 0 };
+  /** A finger held still on the look side keeps digging. */
+  touchDig = false;
   /** Left button currently held (continuous digging). */
   get leftDown(): boolean {
-    return this.dragging;
+    return this.dragging || this.touchDig;
+  }
+
+  /** A one-shot key press from a UI control (touch button). */
+  press(code: string): void {
+    if (this.captured) return;
+    this.pressed.add(code);
+  }
+  /** Hold / release a key from a UI control. */
+  hold(code: string, on: boolean): void {
+    if (on) this.down.add(code);
+    else this.down.delete(code);
   }
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -95,9 +110,9 @@ export class Input {
   /** Movement axes in camera space: x right, z forward (each -1..1). */
   axes(): { x: number; z: number } {
     const d = this.down;
-    const x = (d.has("KeyD") ? 1 : 0) - (d.has("KeyA") ? 1 : 0);
-    const z = (d.has("KeyW") ? 1 : 0) - (d.has("KeyS") ? 1 : 0);
-    return { x, z };
+    const x = (d.has("KeyD") ? 1 : 0) - (d.has("KeyA") ? 1 : 0) + this.touchAxes.x;
+    const z = (d.has("KeyW") ? 1 : 0) - (d.has("KeyS") ? 1 : 0) + this.touchAxes.z;
+    return { x: Math.max(-1, Math.min(1, x)), z: Math.max(-1, Math.min(1, z)) };
   }
 
   /** Arrow keys look (for keyboards without a comfortable drag). Pixels-equivalent per second. */
