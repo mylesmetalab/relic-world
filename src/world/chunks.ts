@@ -1,9 +1,11 @@
 import * as THREE from "three";
 import { anchorHatch, type Pipeline } from "../render/pipeline";
 import { addConvexHull, addHeightfield, removeStatic, type Physics, type StaticHandle } from "../physics/world";
-import { CELLS, CHUNK, Terrain, gridGeometry, sampleGrid, scatterRocks } from "./terrain";
+import { CELLS, CHUNK, Terrain, gridGeometry, sampleGrid, scatterRocks, type Level } from "./terrain";
 import { hash3 } from "./noise";
 import { Props, type ChunkProps } from "./props";
+
+type LevelPart = { mesh: THREE.Mesh | null; collider: StaticHandle };
 
 /** Everything one chunk owns, so it can be dropped in one go. */
 type Chunk = {
@@ -14,17 +16,20 @@ type Chunk = {
   statics: StaticHandle[];
   geometries: THREE.BufferGeometry[];
   props: ChunkProps;
-  /** The lower floor's mesh + collider, replaced when the ground is dug. */
-  floorMesh: THREE.Mesh;
-  floorStatic: StaticHandle;
+  /** Floors by level (0 surface, 1 gallery or null, 2 lower). */
+  floors: [LevelPart, LevelPart | null, LevelPart];
+  /** Ceilings under the surface and under the gallery slab; re-cut when a dig breaks through. */
+  ceilLower: THREE.Mesh | null;
+  ceilUpper: THREE.Mesh | null;
+  gallery: Uint8Array;
 };
 
 /**
- * Keeps a (2r+1)² window of chunks alive around the player. Each chunk is two
- * levels: the lower floor + its ceiling (with shafts cut out), and where a
- * gallery exists the upper floor (slab top) + its ceiling. Both floors are
- * heightfield colliders. At most one chunk is built per frame so crossing a
- * seam never hitches. Digging re-samples a chunk's lower floor in place.
+ * Keeps a (2r+1)² window of chunks alive around the player. Each chunk is up
+ * to three levels — surface, gallery, lower cave — every level a heightfield
+ * collider with a faceted mesh; ceilings are drawn from below with shafts and
+ * dug-through holes cut out. At most one chunk is built per frame so crossing
+ * a seam never hitches. Digging re-samples one level of a chunk in place.
  */
 export class ChunkManager {
   private readonly chunks = new Map<string, Chunk>();
@@ -46,7 +51,6 @@ export class ChunkManager {
     return this.chunks.size;
   }
 
-  /** Call once per frame with the player's position. */
   update(pos: THREE.Vector3, buildBudget = 1): void {
     const cx = Math.floor(pos.x / CHUNK);
     const cz = Math.floor(pos.z / CHUNK);
@@ -54,9 +58,7 @@ export class ChunkManager {
     this.pending.length = 0;
     const ring: Array<[number, number, number]> = [];
     for (let dz = -this.radius; dz <= this.radius; dz++) {
-      for (let dx = -this.radius; dx <= this.radius; dx++) {
-        ring.push([cx + dx, cz + dz, dx * dx + dz * dz]);
-      }
+      for (let dx = -this.radius; dx <= this.radius; dx++) ring.push([cx + dx, cz + dz, dx * dx + dz * dz]);
     }
     ring.sort((a, b) => a[2] - b[2]);
     for (const [x, z] of ring) {
@@ -64,9 +66,7 @@ export class ChunkManager {
       wanted.add(key);
       if (!this.chunks.has(key)) this.pending.push([x, z]);
     }
-    for (const [key, chunk] of this.chunks) {
-      if (!wanted.has(key)) this.dispose(chunk);
-    }
+    for (const [key, chunk] of this.chunks) if (!wanted.has(key)) this.dispose(chunk);
     let budget = buildBudget;
     for (const [x, z] of this.pending) {
       const under = x === cx && z === cz;
@@ -76,33 +76,74 @@ export class ChunkManager {
     }
   }
 
-  /** Build every chunk in the window now (boot). */
   buildAll(pos: THREE.Vector3): void {
     this.update(pos, 1000);
   }
 
-  /** Drop every chunk and build the window again (terrain tunables changed). */
   rebuildAll(pos: THREE.Vector3): void {
     for (const chunk of [...this.chunks.values()]) this.dispose(chunk);
     this.buildAll(pos);
   }
 
-  /** Re-sample the lower floor of the chunks covering these keys (after a dig). */
-  refloor(keys: Iterable<string>): void {
+  /** Re-sample one level's floor in the given chunks (after a dig), and re-cut
+   *  the ceilings under it where the dig broke through. */
+  refloor(level: Level, keys: Iterable<string>): void {
     for (const key of keys) {
       const chunk = this.chunks.get(key);
       if (!chunk) continue;
-      const grid = sampleGrid((x, z) => this.terrain.floorAt(x, z), chunk.cx, chunk.cz);
-      const geo = gridGeometry(grid, chunk.cx, chunk.cz, true)!;
-      chunk.floorMesh.geometry.dispose();
-      chunk.floorMesh.geometry = geo;
-      const idx = chunk.geometries.indexOf(chunk.floorMesh.geometry);
-      if (idx >= 0) chunk.geometries[idx] = geo;
-      removeStatic(this.ph, chunk.floorStatic);
-      const si = chunk.statics.indexOf(chunk.floorStatic);
-      chunk.floorStatic = addHeightfield(this.ph, grid, chunk.cx, chunk.cz);
-      if (si >= 0) chunk.statics[si] = chunk.floorStatic;
-      else chunk.statics.push(chunk.floorStatic);
+      const part = chunk.floors[level];
+      if (!part) continue;
+      const T = this.terrain;
+      const grid = sampleGrid((x, z) => T.levelAt(level, x, z), chunk.cx, chunk.cz);
+      const keep = this.floorMask(chunk, level);
+      const geo = gridGeometry(grid, chunk.cx, chunk.cz, true, keep);
+      if (part.mesh) {
+        part.mesh.geometry.dispose();
+        if (geo) part.mesh.geometry = geo;
+      }
+      removeStatic(this.ph, part.collider);
+      const si = chunk.statics.indexOf(part.collider);
+      part.collider = addHeightfield(this.ph, grid, chunk.cx, chunk.cz);
+      if (si >= 0) chunk.statics[si] = part.collider;
+      else chunk.statics.push(part.collider);
+      this.recutCeilings(chunk);
+    }
+  }
+
+  /** Which cells of a level's floor to draw. The gallery floor only over
+   *  galleries and their rim; everything else everywhere. */
+  private floorMask(chunk: Chunk, level: Level): ((ix: number, iz: number) => boolean) | undefined {
+    if (level !== 1) return undefined;
+    const g = chunk.gallery;
+    return (ix, iz) => g[iz * CELLS + ix] === 1 || neighbourGallery(g, ix, iz);
+  }
+
+  /** Ceilings are drawn where the level above is still intact. */
+  private recutCeilings(chunk: Chunk): void {
+    const T = this.terrain;
+    const ox = chunk.cx * CHUNK, oz = chunk.cz * CHUNK;
+    const cell = (ix: number, iz: number) => [ox + ix + 0.5, oz + iz + 0.5] as const;
+    const isGallery = (ix: number, iz: number) => chunk.gallery[iz * CELLS + ix] === 1;
+    // Lower ceiling: gone where a shaft is, or where whatever sits directly on
+    // this slab (the gallery floor, or the surface) was dug through.
+    if (chunk.ceilLower) {
+      const grid = sampleGrid((x, z) => T.ceiling(x, z), chunk.cx, chunk.cz);
+      const geo = gridGeometry(grid, chunk.cx, chunk.cz, false, (ix, iz) => {
+        const [x, z] = cell(ix, iz);
+        if (isGallery(ix, iz)) return T.hole(x, z) <= 0.62 && !T.brokenThrough(1, x, z);
+        return !T.brokenThrough(0, x, z);
+      });
+      chunk.ceilLower.geometry.dispose();
+      chunk.ceilLower.geometry = geo ?? new THREE.BufferGeometry();
+    }
+    if (chunk.ceilUpper) {
+      const grid = sampleGrid((x, z) => T.ceiling2(x, z), chunk.cx, chunk.cz);
+      const geo = gridGeometry(grid, chunk.cx, chunk.cz, false, (ix, iz) => {
+        const [x, z] = cell(ix, iz);
+        return isGallery(ix, iz) && !T.brokenThrough(0, x, z);
+      });
+      chunk.ceilUpper.geometry.dispose();
+      chunk.ceilUpper.geometry = geo ?? new THREE.BufferGeometry();
     }
   }
 
@@ -116,65 +157,49 @@ export class ChunkManager {
     const ox = cx * CHUNK, oz = cz * CHUNK;
     const hatchSeed = ((chunkSeed % 1000) / 1000 - 0.5) * 1.2;
 
-    // Per-cell masks (sampled at cell centres).
     const gallery = new Uint8Array(CELLS * CELLS);
-    const shaft = new Uint8Array(CELLS * CELLS);
     let anyGallery = false;
     for (let iz = 0; iz < CELLS; iz++) {
       for (let ix = 0; ix < CELLS; ix++) {
-        const x = ox + ix + 0.5, z = oz + iz + 0.5;
-        const g = T.gallery(x, z) > 0.5 ? 1 : 0;
+        const g = T.gallery(ox + ix + 0.5, oz + iz + 0.5) > 0.5 ? 1 : 0;
         gallery[iz * CELLS + ix] = g;
-        shaft[iz * CELLS + ix] = g && T.hole(x, z) > 0.62 ? 1 : 0;
         if (g) anyGallery = true;
       }
     }
-    const isGallery = (ix: number, iz: number) => gallery[iz * CELLS + ix] === 1;
-    const isShaft = (ix: number, iz: number) => shaft[iz * CELLS + ix] === 1;
 
-    // Lower floor (always; digs applied).
-    const floorGrid = sampleGrid((x, z) => T.floorAt(x, z), cx, cz);
-    const floorGeo = gridGeometry(floorGrid, cx, cz, true)!;
-    const floorMesh = new THREE.Mesh(floorGeo, this.p.rockMat);
-    anchorHatch(this.p, floorMesh, hatchSeed);
-    group.add(floorMesh);
-    geometries.push(floorGeo);
-    const floorStatic = addHeightfield(this.ph, floorGrid, cx, cz);
-    statics.push(floorStatic);
+    const floorPart = (level: Level, keep?: (ix: number, iz: number) => boolean, seedSign = 1): LevelPart => {
+      const grid = sampleGrid((x, z) => T.levelAt(level, x, z), cx, cz);
+      const geo = gridGeometry(grid, cx, cz, true, keep);
+      let mesh: THREE.Mesh | null = null;
+      if (geo) {
+        mesh = new THREE.Mesh(geo, this.p.rockMat);
+        anchorHatch(this.p, mesh, hatchSeed * seedSign + level * 0.37);
+        group.add(mesh);
+        geometries.push(geo);
+      }
+      const collider = addHeightfield(this.ph, grid, cx, cz);
+      statics.push(collider);
+      return { mesh, collider };
+    };
 
-    // Lower ceiling — the vault, or the slab's underside; shafts are cut out.
-    const ceilGrid = sampleGrid((x, z) => T.ceiling(x, z), cx, cz);
-    const ceilGeo = gridGeometry(ceilGrid, cx, cz, false, (ix, iz) => !isShaft(ix, iz));
-    if (ceilGeo) {
-      group.add(new THREE.Mesh(ceilGeo, this.p.ceilMat));
-      geometries.push(ceilGeo);
-    }
+    const lower = floorPart(2);
+    const surface = floorPart(0, undefined, -1);
+    const galleryPart = anyGallery
+      ? floorPart(1, (ix, iz) => gallery[iz * CELLS + ix] === 1 || neighbourGallery(gallery, ix, iz), 0.5)
+      : null;
 
+    // Ceilings (cut properly by recutCeilings below).
+    const ceilLower = new THREE.Mesh(new THREE.BufferGeometry(), this.p.ceilMat);
+    group.add(ceilLower);
+    let ceilUpper: THREE.Mesh | null = null;
     if (anyGallery) {
-      // Upper floor: slab top, ramping down at edges and into shafts. Drawn
-      // over gallery cells and their rim (the ramps); the collider covers the
-      // whole chunk so the ramps are solid.
-      const floor2Grid = sampleGrid((x, z) => T.floor2(x, z), cx, cz);
-      const f2 = gridGeometry(floor2Grid, cx, cz, true, (ix, iz) => isGallery(ix, iz) || neighbourGallery(gallery, ix, iz));
-      if (f2) {
-        const m = new THREE.Mesh(f2, this.p.rockMat);
-        anchorHatch(this.p, m, -hatchSeed);
-        group.add(m);
-        geometries.push(f2);
-      }
-      statics.push(addHeightfield(this.ph, floor2Grid, cx, cz));
-
-      const ceil2Grid = sampleGrid((x, z) => T.ceiling2(x, z), cx, cz);
-      const c2 = gridGeometry(ceil2Grid, cx, cz, false, (ix, iz) => isGallery(ix, iz));
-      if (c2) {
-        group.add(new THREE.Mesh(c2, this.p.ceilMat));
-        geometries.push(c2);
-      }
+      ceilUpper = new THREE.Mesh(new THREE.BufferGeometry(), this.p.ceilMat);
+      group.add(ceilUpper);
     }
 
-    for (const upper of [false, true]) {
-      if (upper && !anyGallery) continue;
-      for (const r of scatterRocks(T, cx, cz, chunkSeed, upper)) {
+    for (const level of [2, 1, 0] as Level[]) {
+      if (level === 1 && !anyGallery) continue;
+      for (const r of scatterRocks(T, cx, cz, chunkSeed, level)) {
         const mesh = new THREE.Mesh(r.geometry, this.p.rockMat);
         mesh.position.copy(r.position);
         mesh.rotation.y = r.rotationY;
@@ -187,12 +212,19 @@ export class ChunkManager {
     }
 
     this.root.add(group);
-    this.chunks.set(key, { key, cx, cz, group, statics, geometries, props: this.props.spawn(cx, cz, chunkSeed), floorMesh, floorStatic });
+    const chunk: Chunk = {
+      key, cx, cz, group, statics, geometries, props: this.props.spawn(cx, cz, chunkSeed),
+      floors: [surface, galleryPart, lower], ceilLower, ceilUpper, gallery,
+    };
+    this.recutCeilings(chunk);
+    this.chunks.set(key, chunk);
   }
 
   private dispose(chunk: Chunk): void {
     this.root.remove(chunk.group);
     for (const g of chunk.geometries) g.dispose();
+    chunk.ceilLower?.geometry.dispose();
+    chunk.ceilUpper?.geometry.dispose();
     for (const s of chunk.statics) removeStatic(this.ph, s);
     this.props.dispose(chunk.props);
     this.chunks.delete(chunk.key);

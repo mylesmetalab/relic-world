@@ -25,23 +25,29 @@ export type Biome = {
   /** Rocks per chunk, and the share that are tall stalagmites. */
   rocks: number;
   tallShare: number;
+  /** Extra ceiling height — a Cathedral vaults; the surface rises over it. */
+  ceilLift: number;
 };
 
 const ramp = (name: string): GradientStop[] => ENVWAYS.find((e) => e.name === name)!.ramp;
 
 export const BIOMES: Biome[] = [
-  { name: "Dungeon", ramp: ramp("Dungeon Cave"), terrace: 0, relief: 1.0, rocks: 12, tallShare: 0.25,
+  { name: "Dungeon", ramp: ramp("Dungeon Cave"), terrace: 0, relief: 1.0, rocks: 12, tallShare: 0.25, ceilLift: 0,
     pen: { hatchRange: 0.55, black: 0.3, pitchScale: 1.3, nib: 1.0, cracks: 0.55, stipple: 0.35, hatchRot: 0, formFollow: 0.35 } },
-  { name: "Glacier", ramp: ramp("Glacier"), terrace: 1.5, relief: 1.1, rocks: 7, tallShare: 0.1,
+  { name: "Glacier", ramp: ramp("Glacier"), terrace: 1.5, relief: 1.1, rocks: 7, tallShare: 0.1, ceilLift: 0,
     pen: { hatchRange: 0.48, black: 0.2, pitchScale: 0.9, nib: 0.7, cracks: 0.15, stipple: 0.12, hatchRot: 0.5, formFollow: 0.2 } },
-  { name: "Blood Cave", ramp: ramp("Blood Cave"), terrace: 0, relief: 0.9, rocks: 14, tallShare: 0.3,
+  { name: "Blood Cave", ramp: ramp("Blood Cave"), terrace: 0, relief: 0.9, rocks: 14, tallShare: 0.3, ceilLift: 0,
     pen: { hatchRange: 0.62, black: 0.38, pitchScale: 1.6, nib: 1.5, cracks: 0.8, stipple: 0.5, hatchRot: -0.4, formFollow: 0.5 } },
-  { name: "Sulphur Pit", ramp: ramp("Sulphur Pit"), terrace: 0, relief: 0.8, rocks: 20, tallShare: 0.55,
+  { name: "Sulphur Pit", ramp: ramp("Sulphur Pit"), terrace: 0, relief: 0.8, rocks: 20, tallShare: 0.55, ceilLift: 0,
     pen: { hatchRange: 0.5, black: 0.25, pitchScale: 1.1, nib: 0.9, cracks: 0.4, stipple: 0.7, hatchRot: 0.9, formFollow: 0.3 } },
-  { name: "Void Peaks", ramp: ramp("Void Peaks"), terrace: 2.0, relief: 1.2, rocks: 9, tallShare: 0.6,
+  { name: "Void Peaks", ramp: ramp("Void Peaks"), terrace: 2.0, relief: 1.2, rocks: 9, tallShare: 0.6, ceilLift: 0,
     pen: { hatchRange: 0.7, black: 0.45, pitchScale: 2.0, nib: 1.2, cracks: 0.3, stipple: 0.2, hatchRot: -1.1, formFollow: 0.6 } },
-  { name: "Deep Sea", ramp: ramp("Deep Sea"), terrace: 0, relief: 0.6, rocks: 6, tallShare: 0.15,
+  { name: "Deep Sea", ramp: ramp("Deep Sea"), terrace: 0, relief: 0.6, rocks: 6, tallShare: 0.15, ceilLift: 0,
     pen: { hatchRange: 0.45, black: 0.2, pitchScale: 1.0, nib: 0.8, cracks: 0.1, stipple: 0.6, hatchRot: 0.2, formFollow: 0.25 } },
+  // The one place the vault feels vast: a 24 m ceiling, pillars that reach
+  // it, a fine pen so the height reads.
+  { name: "Cathedral", ramp: ramp("Void Peaks"), terrace: 0, relief: 0.7, rocks: 8, tallShare: 0.9, ceilLift: 24,
+    pen: { hatchRange: 0.5, black: 0.22, pitchScale: 0.8, nib: 0.65, cracks: 0.25, stipple: 0.15, hatchRot: 0.3, formFollow: 0.4 } },
 ];
 
 /** World metres per biome-noise unit — mirrors `uBiomeScale` in the shader. */

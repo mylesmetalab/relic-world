@@ -6,6 +6,8 @@ import { buildGolem, GOLEM_MOTION, type GolemKind } from "./golems";
 import { stlEnabled } from "../world/settings";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mulberry32 } from "../world/noise";
+import { rockGeometry } from "../world/terrain";
 
 /**
  * A figure — the player's body, or another player's. Two kinds:
@@ -64,6 +66,10 @@ export class Figure {
   character: CharacterId = "bast";
   /** Height of the figure in metres (for the chat bubble anchor). */
   height = 1.7;
+  /** Leg pivots (golems only) — swing with the walk. */
+  private legs: THREE.Group[] = [];
+  /** Flail while carried. */
+  flail = false;
 
   constructor(private readonly p: Pipeline) {
     this.material = makeFigureMaterial(p);
@@ -86,16 +92,36 @@ export class Figure {
     let cutMin: number;
     let full: THREE.Box3;
     let owned: THREE.BufferGeometry | null = null;
+    this.legs = [];
     if (id.startsWith("golem-")) {
       const kind = id.slice(6) as GolemKind;
       let h = 13;
       for (const ch of kind) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
       geometry = buildGolem(kind, h);
+      // Legs: the body rides on pivoting rock stumps (four for the hound).
+      const legLen = kind === "hound" ? 0.3 : 0.36;
+      geometry.translate(0, legLen * 0.85, 0);
       geometry.computeBoundingBox();
       full = geometry.boundingBox!.clone();
-      cutMin = full.min.y;
+      full.min.y = 0;
+      cutMin = 0;
       owned = geometry;
       this.motion = GOLEM_MOTION[kind];
+      const rng = mulberry32(h ^ 0x51ed);
+      const spots: Array<[number, number]> = kind === "hound" ? [[-0.2, 0.3], [0.2, 0.3], [-0.2, -0.3], [0.2, -0.3]] : [[-0.16, 0], [0.16, 0]];
+      for (const [lx, lz] of spots) {
+        const g = rockGeometry(rng, 0.075 + rng() * 0.03, legLen);
+        g.translate(0, -legLen / 2, 0); // hangs from the pivot
+        const pivot = new THREE.Group();
+        pivot.position.set(lx, legLen * 0.95, lz);
+        const leg = new THREE.Mesh(g, this.material);
+        anchorHatch(this.p, leg, 0.2);
+        const hull = new THREE.Mesh(g, this.p.hullMat);
+        this.p.ndHidden.add(hull);
+        pivot.add(leg, hull);
+        pivot.userData.geo = g;
+        this.legs.push(pivot);
+      }
     } else {
       this.motion = { bob: 0.06, lean: 0.035, float: 0 };
       const m = await loadPacked(id as PackedId);
@@ -119,6 +145,7 @@ export class Figure {
     this.hull = hull;
     const carrier = new THREE.Group();
     carrier.add(color, hull);
+    for (const leg of this.legs) carrier.add(leg);
     carrier.scale.setScalar(scale);
     carrier.position.set(-centre.x * scale, -cutMin * scale, -centre.z * scale);
     carrier.rotation.y = FACING[id] ?? 0;
@@ -142,7 +169,21 @@ export class Figure {
     const lift = (speed > 0.3 ? Math.abs(Math.sin(this.bob)) * m.bob : 0) + m.float * (0.6 + 0.4 * Math.sin(this.bob * 0.35 + performance.now() * 0.0012));
     this.group.position.set(feet.x, feet.y + lift, feet.z);
     this.group.rotation.y = this.facing;
+    if (this.flail) {
+      const t = performance.now() * 0.012;
+      this.inner.rotation.z = Math.sin(t) * 0.5;
+      this.inner.rotation.x = Math.cos(t * 0.7) * 0.35;
+      this.legs.forEach((leg, i) => { leg.rotation.x = Math.sin(t * 1.6 + i * 2) * 1.1; });
+      return;
+    }
+    this.inner.rotation.x = 0;
     this.inner.rotation.z = speed > 0.3 ? Math.sin(this.bob) * m.lean : 0;
+    // Legs swing in opposition, more with speed.
+    const swing = Math.min(1, speed / 4) * 0.8;
+    this.legs.forEach((leg, i) => {
+      const phase = this.legs.length === 4 ? (i === 0 || i === 3 ? 0 : Math.PI) : i * Math.PI;
+      leg.rotation.x = Math.sin(this.bob + phase) * swing;
+    });
   }
 
   /** Wear a dropped .stl: welded, Z-up → Y-up, base cut, normalised to height.
@@ -206,6 +247,7 @@ export class Figure {
     this.p.scene.remove(this.group);
     if (this.hull) this.p.ndHidden.delete(this.hull);
     this.ownedGeometry?.dispose();
+    for (const leg of this.legs) (leg.userData.geo as THREE.BufferGeometry | undefined)?.dispose();
     disposeFigureMaterial(this.p, this.material);
   }
 }

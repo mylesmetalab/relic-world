@@ -48,7 +48,10 @@ the rock for you too, and what they push, you see move.
   ceiling is a slab whose top is another floor with its own ceiling. Shafts
   drop through; gallery edges are cliffs. Push into any sheer face and you
   climb it, hand over hand, while stamina lasts — let go and you drop.
-- **You can dig.** Click with empty hands to carve the ground or a wall;
+- **You can dig.** Click with empty hands to carve the ground or a wall —
+  small, body-wide cuts (the amount per dig is in the panel's dig section).
+  Aim up at a wall and each dig carves a step you can mantle onto; you start
+  on the surface and dig down through the crust into the caves;
   digs are shared and persist for the session. Plant torches (X) to light
   the way back.
 - **Biomes have hard edges.** Six regions, each with its own cave colorway

@@ -4,29 +4,30 @@ import { BIOMES, biomeAt, biomeIdAt, type Biome } from "./biomes";
 import { CFG } from "./config";
 
 /**
- * The cave as two height fields. `floor(x,z)` is the walkable surface and the
- * ONLY terrain collider; `ceiling(x,z)` is the unlit roof. Where a third
- * field (solidity) says "rock", the floor is lifted up to the ceiling — that
- * pinch is a wall or a pillar, and it falls out of the same mesh + collider
- * as the ground. Biomes (hard-edged regions) scale the relief, terrace the
- * floor into climbable ledges, and set the rock scatter. One seed drives
- * every field.
+ * The world as stacked height fields.
  *
- * LAYERS: a gallery field says where a second level exists. There, the lower
- * cave's ceiling is a slab whose top is the UPPER floor (`floor2`), with its
- * own ceiling above. Shafts (a hole field) drop the upper floor to the lower
- * one, so you fall through from above and climb up through from below; at a
- * gallery's edge the upper floor ramps down steeply to the lower — a cliff you
- * scale with stamina.
+ *   level 0 — the SURFACE. Bare paper under a paper sky; you start here and
+ *             dig down.
+ *   level 1 — GALLERIES: where a gallery field says so, the lower cave's
+ *             ceiling is a slab whose top is another floor with its own
+ *             ceiling. Shafts drop through; gallery edges ramp down as cliffs.
+ *   level 2 — the LOWER CAVE. `floor` is the walkable surface; solidity lifts
+ *             it to the ceiling to make walls and pillars.
+ *
+ * Every level is one heightfield per chunk, so every level is walkable and
+ * diggable. Digging is a per-vertex depth map per level; dig deeper than the
+ * slab and the level "breaks through" to the one below — that is how you get
+ * from the surface into the caves.
  */
 
-/** Slab between the lower ceiling and the upper floor. */
-export const SLAB = 0.6;
-
+/** Slab between the lower cave's ceiling and the gallery floor above it —
+ *  three digs' worth, so breaking through is a decision, not a click. */
+export const SLAB = 1.8;
 export const CHUNK = 24; // metres per chunk
 export const CELLS = 24; // cells per chunk edge (1 m)
-/** Rooms open up around the spawn so you never start inside a wall. */
+/** Rooms open up around the spawn column so you never start inside a wall. */
 const SPAWN_CLEAR = 9;
+export type Level = 0 | 1 | 2;
 
 export class Terrain {
   private readonly floorLo: Simplex2;
@@ -37,18 +38,20 @@ export class Terrain {
   private readonly gal: Simplex2;
   private readonly holeN: Simplex2;
   private readonly ceil2Hi: Simplex2;
-  /** Dug-out depth per integer world vertex ("x,z" → metres removed). */
-  readonly digs = new Map<string, number>();
+  private readonly hills: Simplex2;
+  /** Dug-out depth per integer world vertex ("x,z" → metres removed), per level. */
+  readonly digs: [Map<string, number>, Map<string, number>, Map<string, number>] = [new Map(), new Map(), new Map()];
 
   constructor(readonly seed: number) {
-    this.gal = new Simplex2(seed * 7 + 6);
-    this.holeN = new Simplex2(seed * 7 + 7);
-    this.ceil2Hi = new Simplex2(seed * 7 + 8);
     this.floorLo = new Simplex2(seed * 7 + 1);
     this.floorHi = new Simplex2(seed * 7 + 2);
     this.ceilLo = new Simplex2(seed * 7 + 3);
     this.ceilHi = new Simplex2(seed * 7 + 4);
     this.solid = new Simplex2(seed * 7 + 5);
+    this.gal = new Simplex2(seed * 7 + 6);
+    this.holeN = new Simplex2(seed * 7 + 7);
+    this.ceil2Hi = new Simplex2(seed * 7 + 8);
+    this.hills = new Simplex2(seed * 7 + 9);
   }
 
   biome(x: number, z: number): Biome {
@@ -58,8 +61,10 @@ export class Terrain {
     return biomeIdAt(x, z, this.seed);
   }
 
+  // ── Analytic fields (no digging) ─────────────────────────────────────
+
   /** Rolling cave floor before walls: dunes plus rocky chop, terraced in
-   *  biomes that want ledges. The spawn pad is flat and always Dungeon-relief. */
+   *  biomes that want ledges. The spawn column is flat. */
   floorOpen(x: number, z: number): number {
     const b = this.biome(x, z);
     const d = Math.hypot(x, z);
@@ -68,17 +73,17 @@ export class Terrain {
     const broad = this.floorLo.fbm(x / W.dunes, z / W.dunes, 4) * 2.4 * b.relief;
     const chop = this.floorHi.fbm(x / W.chop, z / W.chop, 2) * 0.55;
     if (b.terrace > 0) {
-      // Steps with a slightly rough tread; the risers are what you climb.
       const stepped = Math.round(broad / b.terrace) * b.terrace;
       return W.floorBase + (stepped + chop * 0.35) * pad;
     }
     return W.floorBase + (broad + chop) * pad;
   }
 
+  /** The lower cave's ceiling. Cathedral biomes lift it into a vault. */
   ceiling(x: number, z: number): number {
     const broad = this.ceilLo.fbm(x / 34, z / 34, 3) * CFG.world.ceilRelief;
     const chop = this.ceilHi.fbm(x / 6, z / 6, 2) * 0.7;
-    return CFG.world.ceilBase + broad + chop;
+    return CFG.world.ceilBase + broad + chop + this.biome(x, z).ceilLift;
   }
 
   /** 0..1 — how much this column is solid rock (wall / pillar). */
@@ -88,8 +93,8 @@ export class Terrain {
     return s * smoothstep(SPAWN_CLEAR * 0.5, SPAWN_CLEAR * 1.6, d);
   }
 
-  /** The walkable surface, walls included. In a gallery a pinch wall rises
-   *  all the way to the upper floor, so its top IS the next level. */
+  /** The lower floor, walls included. In a gallery a pinch wall rises all the
+   *  way to the upper floor, so its top IS the next level. */
   floor(x: number, z: number): number {
     const open = this.floorOpen(x, z);
     const s = this.solidity(x, z);
@@ -100,66 +105,141 @@ export class Terrain {
     return lerp(open, top, wall);
   }
 
-  /** 0..1 — where the upper level exists (above 0.5). Never over the spawn pad. */
+  /** 0..1 — where the upper level exists (above 0.5). Never over the spawn column. */
   gallery(x: number, z: number): number {
     const n = (this.gal.fbm(x / 70 - 30, z / 70 + 55, 3) + 1) * 0.5;
     return n * smoothstep(12, 30, Math.hypot(x, z));
   }
 
-  /** 0..1 — a shaft through the slab (above 0.5), only inside a gallery. */
+  /** 0..1 — a shaft through the gallery slab (above 0.5), only inside a gallery. */
   hole(x: number, z: number): number {
     if (this.gallery(x, z) < 0.5) return 0;
     return (this.holeN.fbm(x / 13 + 7, z / 13 - 3, 2) + 1) * 0.5;
   }
 
-  /** The upper floor: the slab top inside galleries, dropping to the lower
-   *  floor in shafts and (steeply) at gallery edges. Outside galleries it
-   *  hides just under the lower floor so its collider never wins. */
+  /** The upper (gallery) floor: slab top inside galleries, dropping to the
+   *  lower floor in shafts and steeply at gallery edges; hidden just under the
+   *  lower floor elsewhere so its collider never wins. */
   floor2(x: number, z: number): number {
     const g = this.gallery(x, z);
     const lower = this.floor(x, z);
     const edge = smoothstep(0.5, 0.545, g);
     if (edge <= 0) return lower - 0.05;
     const slabTop = this.ceiling(x, z) + SLAB;
-    const h = this.hole(x, z);
-    const shaft = smoothstep(0.58, 0.66, h);
+    const shaft = smoothstep(0.58, 0.66, this.hole(x, z));
     return lerp(lower - 0.05, lerp(slabTop, lower, shaft), edge);
   }
 
-  /** The upper level's ceiling (only meaningful where gallery > 0.5). */
+  /** The gallery's ceiling (only meaningful where gallery > 0.5). */
   ceiling2(x: number, z: number): number {
     return this.ceiling(x, z) + SLAB + 7.5 + this.ceil2Hi.fbm(x / 22, z / 22, 3) * 2.5;
   }
 
-  /** Is (x,z) upper-level walkable — slab top, no shaft, not the edge ramp? */
-  isUpperOpen(x: number, z: number): boolean {
-    return this.gallery(x, z) > 0.56 && this.hole(x, z) < 0.5 && this.solidity(x, z) < 0.5;
+  /** The roof of whatever cave is topmost here — what the surface sits on. */
+  roofBelow(x: number, z: number): number {
+    const g = smoothstep(0.47, 0.56, this.gallery(x, z));
+    return lerp(this.ceiling(x, z), this.ceiling2(x, z), g);
   }
 
-  /** The lower floor WITH digging applied (bilinear over the dug vertices). */
-  floorAt(x: number, z: number): number {
-    const base = this.floor(x, z);
-    if (this.digs.size === 0) return base;
+  /** The surface: a crust of rock (`world.crust` metres, tunable) over the
+   *  topmost cave, with gentle hills. Galleries and cathedral vaults push it
+   *  up into ridges. You dig through the crust to get in. */
+  surface(x: number, z: number): number {
+    const pad = smoothstep(3, 12, Math.hypot(x, z));
+    const hill = this.hills.fbm(x / 40 + 9, z / 40 - 4, 3) * 2.2 * pad;
+    return this.roofBelow(x, z) + CFG.world.crust + hill;
+  }
+
+  /** Metres of rock between a level and the cave under it. Digging this much
+   *  breaks through. The lower cave has nothing under it. */
+  thickness(level: Level, x: number, z: number): number {
+    if (level === 2) return Infinity;
+    const t = level === 0 ? this.surface(x, z) - this.roofBelow(x, z) : this.floor2(x, z) - this.ceiling(x, z);
+    return Math.max(0.3, t);
+  }
+
+  // ── Dug fields (what is actually built and collided) ─────────────────
+
+  private dug(level: Level, x: number, z: number): number {
+    const m = this.digs[level];
+    if (m.size === 0) return 0;
     const x0 = Math.floor(x), z0 = Math.floor(z);
     const fx = x - x0, fz = z - z0;
-    const d = (X: number, Z: number) => this.digs.get(`${X},${Z}`) ?? 0;
-    const dug = (d(x0, z0) * (1 - fx) + d(x0 + 1, z0) * fx) * (1 - fz) + (d(x0, z0 + 1) * (1 - fx) + d(x0 + 1, z0 + 1) * fx) * fz;
-    return base - dug;
+    const d = (X: number, Z: number) => m.get(`${X},${Z}`) ?? 0;
+    return (d(x0, z0) * (1 - fx) + d(x0 + 1, z0) * fx) * (1 - fz) + (d(x0, z0 + 1) * (1 - fx) + d(x0 + 1, z0 + 1) * fx) * fz;
   }
 
-  /** Carve a crater: lower every grid vertex within `radius` of (x,z) by up to
-   *  `depth` (smooth falloff). Returns the chunk keys whose floors changed. */
-  dig(x: number, z: number, radius: number, depth: number): Set<string> {
+  /** Lower floor with digging. */
+  floorAt(x: number, z: number): number {
+    return this.floor(x, z) - this.dug(2, x, z);
+  }
+
+  /** How far through the rock under a level a dig has gone here: 0 intact, 1 open. */
+  private through(level: Level, x: number, z: number, d: number): number {
+    if (d <= 0) return 0;
+    const t = this.thickness(level, x, z);
+    return smoothstep(t - 0.15, t + 0.35, d);
+  }
+
+  /** Gallery floor with digging; dug through the slab it drops to the lower floor. */
+  floor2At(x: number, z: number): number {
+    const d = this.dug(1, x, z);
+    const through = this.through(1, x, z, d);
+    return lerp(this.floor2(x, z) - d, this.floorAt(x, z), through);
+  }
+
+  /** Surface with digging; dug through the crust it drops to the cave below. */
+  surfaceAt(x: number, z: number): number {
+    const d = this.dug(0, x, z);
+    const through = this.through(0, x, z, d);
+    const below = this.gallery(x, z) > 0.5 ? this.floor2At(x, z) : this.floorAt(x, z);
+    return lerp(this.surface(x, z) - d, below, through);
+  }
+
+  /** Height of a level at (x,z), digging included. */
+  levelAt(level: Level, x: number, z: number): number {
+    return level === 0 ? this.surfaceAt(x, z) : level === 1 ? this.floor2At(x, z) : this.floorAt(x, z);
+  }
+
+  /** Has this level been dug through here (a hole to the level below)? */
+  brokenThrough(level: Level, x: number, z: number): boolean {
+    return level < 2 && this.dug(level, x, z) >= this.thickness(level, x, z) + 0.1;
+  }
+
+  /** Which level a point at height y sits on (nearest level height). */
+  levelOf(x: number, z: number, y: number): Level {
+    const cands: Array<[Level, number]> = [[0, this.surfaceAt(x, z)], [2, this.floorAt(x, z)]];
+    if (this.gallery(x, z) > 0.5) cands.push([1, this.floor2At(x, z)]);
+    cands.sort((a, b) => Math.abs(a[1] - y) - Math.abs(b[1] - y));
+    return cands[0]![0];
+  }
+
+  /** Dig a flat-bottomed pit on a level: vertices within `radius` drop by
+   *  `depth`, with a soft rim so it reads as hand-dug. Flat-bottomed matters:
+   *  a V-shaped crater one vertex wide is a funnel the body can't fit down. */
+  dig(level: Level, x: number, z: number, radius: number, depth: number): Set<string> {
+    return this.carve(level, x, z, radius, (X, Z, t) => depth * smoothstep(0, 0.4, t) + (this.digs[level].get(`${X},${Z}`) ?? 0));
+  }
+
+  /** Dig a level DOWN TO a height (a tunnel into a wall, a flat-bottomed pit).
+   *  The rim keeps a soft falloff so the cut reads as hand-dug. */
+  digTo(level: Level, x: number, z: number, radius: number, targetY: number): Set<string> {
+    const base = (X: number, Z: number) => (level === 0 ? this.surface(X, Z) : level === 1 ? this.floor2(X, Z) : this.floor(X, Z));
+    return this.carve(level, x, z, radius, (X, Z, t) => {
+      const need = Math.max(0, base(X, Z) - targetY) * smoothstep(0, 0.35, t);
+      return Math.max(this.digs[level].get(`${X},${Z}`) ?? 0, need);
+    });
+  }
+
+  private carve(level: Level, x: number, z: number, radius: number, value: (X: number, Z: number, t: number) => number): Set<string> {
     const touched = new Set<string>();
+    const m = this.digs[level];
     for (let Z = Math.floor(z - radius); Z <= Math.ceil(z + radius); Z++) {
       for (let X = Math.floor(x - radius); X <= Math.ceil(x + radius); X++) {
         const dd = Math.hypot(X - x, Z - z);
         if (dd > radius) continue;
         const t = 1 - dd / radius;
-        const amount = depth * (t * t * (3 - 2 * t));
-        const key = `${X},${Z}`;
-        this.digs.set(key, Math.min(60, (this.digs.get(key) ?? 0) + amount));
-        // A vertex on a chunk edge belongs to both chunks.
+        m.set(`${X},${Z}`, Math.min(80, value(X, Z, t)));
         for (const cx of [Math.floor(X / CHUNK), Math.floor((X - 1) / CHUNK)]) {
           for (const cz of [Math.floor(Z / CHUNK), Math.floor((Z - 1) / CHUNK)]) touched.add(`${cx},${cz}`);
         }
@@ -168,13 +248,19 @@ export class Terrain {
     return touched;
   }
 
-  /** Is (x,z) open air at head height — usable for placing things? */
+  /** Is (x,z) open air at head height on the lower level — usable for placing things? */
   isOpen(x: number, z: number): boolean {
     return this.solidity(x, z) < 0.5 && this.ceiling(x, z) - this.floorOpen(x, z) > 3;
   }
 
+  /** Is (x,z) gallery-level walkable — slab top, no shaft, not the edge ramp? */
+  isUpperOpen(x: number, z: number): boolean {
+    return this.gallery(x, z) > 0.56 && this.hole(x, z) < 0.5 && this.solidity(x, z) < 0.5;
+  }
+
+  /** You start on the surface, at the world's origin. */
   spawnPoint(): THREE.Vector3 {
-    return new THREE.Vector3(0, this.floor(0, 0) + 1.2, 0);
+    return new THREE.Vector3(0, this.surfaceAt(0, 0) + 1.0, 0);
   }
 }
 
@@ -225,12 +311,10 @@ export function gridGeometry(
   for (let iz = 0; iz < CELLS; iz++) {
     for (let ix = 0; ix < CELLS; ix++) {
       if (keep && !keep(ix, iz)) continue;
-      // Alternate the diagonal so facets don't all lean one way.
       const flip = ((ix + iz) & 1) === 0;
       const a: [number, number] = [ix, iz], b: [number, number] = [ix + 1, iz];
       const c: [number, number] = [ix + 1, iz + 1], d: [number, number] = [ix, iz + 1];
       const tris = flip ? [a, c, b, a, d, c] : [a, d, b, b, d, c];
-      // Counter-clockwise seen from +y for the floor; reversed for the ceiling.
       const order = up ? [0, 1, 2, 3, 4, 5] : [0, 2, 1, 3, 5, 4];
       for (const i of order) put(tris[i]![0], tris[i]![1]);
     }
@@ -270,32 +354,27 @@ export function rockGeometry(rng: () => number, radius: number, height: number):
   return geo;
 }
 
-/** Scatter boulders and stalagmites over a chunk per its biome, seated on
- *  the floor, avoiding walls and the spawn pad. Deterministic per chunk. */
-export function scatterRocks(terrain: Terrain, cx: number, cz: number, chunkSeed: number, upper = false): RockSpec[] {
-  const rng = mulberry32(chunkSeed ^ (upper ? 0x9e3779b9 : 0));
+/** Scatter boulders and stalagmites over a chunk on one level, seated on that
+ *  level's floor, avoiding walls and the spawn column. Deterministic. */
+export function scatterRocks(terrain: Terrain, cx: number, cz: number, chunkSeed: number, level: Level): RockSpec[] {
+  const rng = mulberry32(chunkSeed ^ (level === 1 ? 0x9e3779b9 : level === 0 ? 0x27d4eb2f : 0));
   const out: RockSpec[] = [];
   const centre = terrain.biome(cx * CHUNK + CHUNK / 2, cz * CHUNK + CHUNK / 2);
-  const count = Math.round(centre.rocks * (0.7 + rng() * 0.6) * (upper ? 0.5 : 1));
+  const count = Math.round(centre.rocks * (0.7 + rng() * 0.6) * (level === 2 ? 1 : 0.5));
   for (let i = 0; i < count; i++) {
     const x = cx * CHUNK + rng() * CHUNK;
     const z = cz * CHUNK + rng() * CHUNK;
     if (Math.hypot(x, z) < 4) continue;
-    if (upper ? !terrain.isUpperOpen(x, z) : !terrain.isOpen(x, z)) continue;
+    if (level === 2 && !terrain.isOpen(x, z)) continue;
+    if (level === 1 && !terrain.isUpperOpen(x, z)) continue;
     const b = terrain.biome(x, z);
     const tall = rng() < b.tallShare;
     const radius = tall ? 0.25 + rng() * 0.5 : 0.35 + rng() * 1.1;
     const height = tall ? 1.8 + rng() * 3.2 : 0.35 + rng() * 1.4;
     const geometry = rockGeometry(rng, radius, height);
-    const y = (upper ? terrain.floor2(x, z) : terrain.floor(x, z)) + height / 2 - Math.min(0.25, height * 0.2);
+    const y = terrain.levelAt(level, x, z) + height / 2 - Math.min(0.25, height * 0.2);
     const hullPts = (geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
-    out.push({
-      geometry,
-      position: new THREE.Vector3(x, y, z),
-      rotationY: rng() * Math.PI * 2,
-      hatchSeed: (rng() - 0.5) * 1.4,
-      hull: hullPts,
-    });
+    out.push({ geometry, position: new THREE.Vector3(x, y, z), rotationY: rng() * Math.PI * 2, hatchSeed: (rng() - 0.5) * 1.4, hull: hullPts });
   }
   return out;
 }

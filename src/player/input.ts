@@ -14,6 +14,10 @@ export class Input {
   wheelLooks = true;
   private dragging = false;
   private rightDown = false;
+  /** Left button currently held (continuous digging). */
+  get leftDown(): boolean {
+    return this.dragging;
+  }
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener("keydown", (e) => {

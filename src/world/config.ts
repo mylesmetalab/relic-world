@@ -18,6 +18,8 @@ export type Tunables = {
     dunes: number;
     chop: number;
     ceilRelief: number;
+    /** Metres of rock between the surface and the cave under it. */
+    crust: number;
   };
   light: {
     localReach: number;
@@ -45,6 +47,19 @@ export type Tunables = {
     halftoneScale: number;
     halftoneAngle: number;
   };
+  dig: {
+    /** Radius of a dig and how much it removes per click; walls tunnel with their own radius.
+     *  Digs snap to the 1 m grid cell, so a radius of ~1.2 drops exactly that cell's
+     *  four corners: a body-wide shaft, not a one-vertex funnel. */
+    radius: number;
+    depth: number;
+    tunnelRadius: number;
+    /** Digs per second while the button is held. */
+    rate: number;
+    reach: number;
+    /** Aim up at a wall and each dig carves a step this far above your feet at most. */
+    stepUp: number;
+  };
   figure: {
     hull: number;
     hatchRange: number;
@@ -64,9 +79,10 @@ export type Tunables = {
 };
 
 export const DEFAULTS: Tunables = {
-  world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4 },
+  world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4, crust: 6 },
   light: { localReach: 34, remoteReach: 22, inkStamp: 26, fogNear: 14, fogFar: 70, fog: 0.5, fogTone: 0.4, mottle: 0.3, shadowGamma: 1.25, ceilCell: 26, ceilArcSpacing: 1.6 },
   press: { printScale: 0.6, misreg: 0.6, edgeW: 1.0, depthCut: 0.012, normalCut: 0.5, grain: 0.9, speck: 0.004, halftone: 0, halftoneScale: 4, halftoneAngle: 20 },
+  dig: { radius: 1.2, depth: 0.3, tunnelRadius: 1.2, rate: 5, reach: 4.5, stepUp: 1.3 },
   figure: { hull: 0.55, hatchRange: 0.5, black: 0.1, pitch: 8, nib: 0.75, rim: 0.4, fill: 0.3, stipple: 0.06, formFollow: 0.6, zoneSoft: 0.04, zoneJitter: 0.035, hiCut: 0.78, hatchStyle: 0 },
 };
 

@@ -14,15 +14,16 @@ import { setStlEnabled, stlEnabled } from "../world/settings";
 type Range = [number, number, number]; // min, max, step
 
 const RANGES: Record<keyof Tunables, Record<string, Range>> = {
-  world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1] },
+  world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1], crust: [1, 24, 0.5] },
   light: { localReach: [8, 80, 1], remoteReach: [4, 60, 1], inkStamp: [4, 60, 1], fogNear: [2, 80, 1], fogFar: [10, 200, 1], fog: [0, 1, 0.01], fogTone: [0, 1, 0.01], mottle: [0, 1, 0.01], shadowGamma: [0.4, 3, 0.05], ceilCell: [6, 80, 1], ceilArcSpacing: [0.4, 6, 0.1] },
   press: { printScale: [0.2, 1, 0.05], misreg: [0, 3, 0.1], edgeW: [0.5, 3, 0.1], depthCut: [0.002, 0.05, 0.001], normalCut: [0.1, 1, 0.01], grain: [0, 1, 0.01], speck: [0, 0.02, 0.0005], halftone: [0, 1, 0.01], halftoneScale: [2, 24, 0.5], halftoneAngle: [0, 90, 1] },
+  dig: { radius: [0.6, 5, 0.1], depth: [0.1, 4, 0.05], tunnelRadius: [0.8, 6, 0.1], rate: [1, 20, 1], reach: [2, 12, 0.5], stepUp: [0.8, 2.2, 0.1] },
   figure: { hull: [0, 3, 0.05], hatchRange: [0.2, 0.95, 0.01], black: [0, 0.4, 0.005], pitch: [3, 16, 0.5], nib: [0.3, 2, 0.05], rim: [0, 1, 0.01], fill: [0, 1, 0.01], stipple: [0, 1, 0.01], formFollow: [0, 1, 0.01], zoneSoft: [0, 0.2, 0.005], zoneJitter: [0, 0.1, 0.005], hiCut: [0.3, 1, 0.01], hatchStyle: [0, 1, 1] },
 };
 const PEN_RANGES: Record<string, Range> = {
   hatchRange: [0.2, 0.95, 0.01], black: [0, 0.8, 0.01], pitchScale: [0.4, 3, 0.05], nib: [0.3, 2, 0.05], cracks: [0, 1, 0.01], stipple: [0, 1, 0.01], hatchRot: [-1.6, 1.6, 0.05], formFollow: [0, 1, 0.01],
 };
-const GROUND_RANGES: Record<string, Range> = { terrace: [0, 3, 0.1], relief: [0.2, 2, 0.05], rocks: [0, 30, 1], tallShare: [0, 1, 0.05] };
+const GROUND_RANGES: Record<string, Range> = { terrace: [0, 3, 0.1], relief: [0.2, 2, 0.05], rocks: [0, 30, 1], tallShare: [0, 1, 0.05], ceilLift: [0, 40, 1] };
 
 export type TuneCallbacks = {
   /** Live render values changed (uniforms). */
@@ -79,7 +80,7 @@ export class Tune {
     stl.addEventListener("change", () => { setStlEnabled(stl.checked); this.say("saved — reload to change the cast"); });
     q<HTMLButtonElement>("reset").addEventListener("click", () => {
       resetConfig();
-      for (let i = 0; i < BIOMES.length; i++) Object.assign(BIOMES[i]!.pen, BIOME_DEFAULTS[i]!.pen), Object.assign(BIOMES[i]!, { terrace: BIOME_DEFAULTS[i]!.terrace, relief: BIOME_DEFAULTS[i]!.relief, rocks: BIOME_DEFAULTS[i]!.rocks, tallShare: BIOME_DEFAULTS[i]!.tallShare, ramp: BIOME_DEFAULTS[i]!.ramp });
+      for (let i = 0; i < BIOMES.length; i++) Object.assign(BIOMES[i]!.pen, BIOME_DEFAULTS[i]!.pen), Object.assign(BIOMES[i]!, { terrace: BIOME_DEFAULTS[i]!.terrace, relief: BIOME_DEFAULTS[i]!.relief, rocks: BIOME_DEFAULTS[i]!.rocks, tallShare: BIOME_DEFAULTS[i]!.tallShare, ceilLift: BIOME_DEFAULTS[i]!.ceilLift, ramp: BIOME_DEFAULTS[i]!.ramp });
       this.rebuildUi();
       cb.onRender();
       this.say("defaults restored — rebuild world for terrain");
@@ -105,7 +106,7 @@ export class Tune {
       biomes: BIOMES.map((b) => ({
         name: b.name,
         ramp: ENVWAYS.find((e) => e.ramp === b.ramp)?.name ?? "Dungeon Cave",
-        terrace: b.terrace, relief: b.relief, rocks: b.rocks, tallShare: b.tallShare, pen: b.pen,
+        terrace: b.terrace, relief: b.relief, rocks: b.rocks, tallShare: b.tallShare, ceilLift: b.ceilLift, pen: b.pen,
       })),
     };
   }
@@ -189,8 +190,8 @@ function fmt(v: number): string {
 }
 
 /** Pristine copy of the biome table for Reset. */
-const BIOME_DEFAULTS: Array<{ pen: Biome["pen"]; terrace: number; relief: number; rocks: number; tallShare: number; ramp: Biome["ramp"] }> =
-  BIOMES.map((b) => ({ pen: { ...b.pen }, terrace: b.terrace, relief: b.relief, rocks: b.rocks, tallShare: b.tallShare, ramp: b.ramp }));
+const BIOME_DEFAULTS: Array<{ pen: Biome["pen"]; terrace: number; relief: number; rocks: number; tallShare: number; ceilLift: number; ramp: Biome["ramp"] }> =
+  BIOMES.map((b) => ({ pen: { ...b.pen }, terrace: b.terrace, relief: b.relief, rocks: b.rocks, tallShare: b.tallShare, ceilLift: b.ceilLift, ramp: b.ramp }));
 
 /** Apply an imported biome list (by index) onto the live BIOMES. */
 export function applyBiomeDoc(list: Array<Partial<Biome> & { ramp?: string | Biome["ramp"] }> | undefined): void {
@@ -202,7 +203,7 @@ export function applyBiomeDoc(list: Array<Partial<Biome> & { ramp?: string | Bio
       const e = ENVWAYS.find((x) => x.name === src.ramp);
       if (e) b.ramp = e.ramp;
     }
-    for (const k of ["terrace", "relief", "rocks", "tallShare"] as const) {
+    for (const k of ["terrace", "relief", "rocks", "tallShare", "ceilLift"] as const) {
       const v = src[k];
       if (typeof v === "number") (b as unknown as Record<string, number>)[k] = v;
     }

@@ -48,6 +48,8 @@ export class PlayerController {
   mantle: Mantle | null = null;
   /** True while scaling a wall (stamina draining). */
   wallClimb = false;
+  /** While someone carries me: the point I ride at (set from their state). */
+  carriedAt: THREE.Vector3 | null = null;
   private pushT = 0;
   /** Set for one frame when a mantle starts (HUD / sound hook). */
   justMantled = false;
@@ -143,9 +145,29 @@ export class PlayerController {
     this.justMantled = true;
   }
 
+  /** Let go with a velocity — thrown, or dropped. */
+  launch(vx: number, vy: number, vz: number): void {
+    this.carriedAt = null;
+    this.mantle = null;
+    this.wallClimb = false;
+    this.velocity.set(vx, vy, vz);
+    this.vy = vy;
+    this.grounded = false;
+    this.sinceGrounded = COYOTE;
+  }
+
   /** `wish` is the desired horizontal direction in world space (length ≤ 1). */
   step(dt: number, wish: THREE.Vector3, run: boolean, jump: boolean): void {
     this.justMantled = false;
+    if (this.carriedAt) {
+      // Carried: I am where my carrier's hands are. Physics is bypassed.
+      const c = this.carriedAt;
+      this.body.setNextKinematicTranslation({ x: c.x, y: c.y + HALF_HEIGHT + RADIUS - 0.4, z: c.z });
+      this.grounded = false;
+      this.velocity.set(0, 0, 0);
+      this.vy = 0;
+      return;
+    }
     if (this.mantle) {
       const m = this.mantle;
       m.t = Math.min(1, m.t + dt / m.dur);

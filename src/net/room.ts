@@ -25,10 +25,14 @@ export type PeerState = {
   n: string;
   /** Speech bubble text ("" = none). Drafts stream with a caret. */
   b: string;
+  /** Hold point when carrying a player, and who (peer id) — else null. */
+  h?: [number, number, number] | null;
+  g?: string | null;
 };
 
 export type Peer = { id: string; state: PeerState; lastAt: number };
-export type DigMsg = { x: number; z: number; r: number; d: number };
+/** A dig: level, centre, radius; either a crater depth `d` or a dig-to height `t`. */
+export type DigMsg = { l: number; x: number; z: number; r: number; d: number; t?: number };
 export type TorchMsg = { id: string; p: [number, number, number] };
 
 const ADJECTIVES = ["Hooded", "Quiet", "Ashen", "Sly", "Grim", "Amber", "Lucky", "Wandering", "Pale", "Bold", "Stony", "Feral"];
@@ -56,6 +60,12 @@ export class Net {
   onDig: ((d: DigMsg, peerId: string) => void) | null = null;
   onTorches: ((list: TorchMsg[], peerId: string) => void) | null = null;
   onCollect: ((id: string, peerId: string) => void) | null = null;
+  private readonly grabP;
+  private readonly throwP;
+  /** Someone picked me up (peerId is the carrier). */
+  onGrabbed: ((peerId: string) => void) | null = null;
+  /** My carrier let go with this velocity. */
+  onThrown: ((v: [number, number, number], peerId: string) => void) | null = null;
   /** Pulled on every heartbeat, so a tab that has never rendered a frame
    *  (opened in the background) still announces itself. */
   private source: (() => PeerState | null) | null = null;
@@ -91,6 +101,10 @@ export class Net {
     this.torches.onMessage = (data, ctx) => this.onTorches?.(data, ctx.peerId);
     this.collect = this.room.makeAction<{ k: string }>("collect");
     this.collect.onMessage = (data, ctx) => this.onCollect?.(data.k, ctx.peerId);
+    this.grabP = this.room.makeAction<{ t: string }>("grabP");
+    this.grabP.onMessage = (data, ctx) => { if (data.t === selfId) this.onGrabbed?.(ctx.peerId); };
+    this.throwP = this.room.makeAction<{ t: string; v: [number, number, number] }>("throwP");
+    this.throwP.onMessage = (data, ctx) => { if (data.t === selfId) this.onThrown?.(data.v, ctx.peerId); };
     this.room.onPeerLeave = (id) => {
       if (this.peers.delete(id)) this.onLeave?.(id);
     };
@@ -129,6 +143,12 @@ export class Net {
   }
   sendCollect(k: string): void {
     if (this.peers.size) void this.collect.send({ k }).catch(() => {});
+  }
+  sendGrabPlayer(t: string): void {
+    void this.grabP.send({ t }, { targets: t } as never).catch(() => {});
+  }
+  sendThrowPlayer(t: string, v: [number, number, number]): void {
+    void this.throwP.send({ t, v }, { targets: t } as never).catch(() => {});
   }
 
   get count(): number {

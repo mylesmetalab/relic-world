@@ -1,8 +1,8 @@
 import * as THREE from "three";
-import { applyConfig, createPipeline, renderFrame, resizePipeline, setWorldSeed, MAX_LIGHTS, type Torch } from "./render/pipeline";
+import { applyConfig, createPipeline, renderFrame, resizePipeline, setWorldSeed, MAX_LIGHTS, INK_BLACK, PAPER, type Torch } from "./render/pipeline";
 import { COLORWAYS } from "./render/palette";
 import { initPhysics, rayDistance, rayHit } from "./physics/world";
-import { Terrain } from "./world/terrain";
+import { Terrain, type Level } from "./world/terrain";
 import { ChunkManager } from "./world/chunks";
 import { CFG, configFromUrl, loadConfig } from "./world/config";
 import { msUntilRoll, sharedSeed } from "./world/settings";
@@ -12,7 +12,7 @@ import { PlayerCamera } from "./player/camera";
 import { availableCharacters, Figure, normaliseCharacter, type CharacterId } from "./player/figure";
 import { Grab } from "./player/grab";
 import { Sound } from "./audio/sound";
-import { Net } from "./net/room";
+import { Net, type DigMsg } from "./net/room";
 import { Voice } from "./net/voice";
 import { PhotoMode } from "./ui/photo";
 import { Chat } from "./ui/chat";
@@ -43,9 +43,7 @@ if (urlCfg) {
   applyBiomeDoc(urlCfg.biomes as never);
 }
 
-const DIG_RADIUS = 1.3;
-const DIG_DEPTH = 0.55;
-const DIG_REACH = 4.5;
+const PLAYER_REACH = 3.4;
 const MAX_PLACED_TORCHES = 16;
 
 type Remote = {
@@ -80,7 +78,7 @@ async function boot(): Promise<void> {
       const z = Math.round((Math.random() - 0.5) * 60);
       const d = rayDistance(ph, { x, y: 60, z }, { x: 0, y: -1, z: 0 }, 100);
       if (d == null) continue;
-      errs.push(Math.abs(60 - d - Math.max(terrain.floorAt(x, z), terrain.floor2(x, z))));
+      errs.push(Math.abs(60 - d - terrain.surfaceAt(x, z)));
     }
     errs.sort((a, b) => a - b);
     const median = errs[Math.floor(errs.length / 2)] ?? Infinity;
@@ -142,13 +140,62 @@ async function boot(): Promise<void> {
   };
   net.onProps = (states) => chunks.props.apply(states, isOwner);
   chunks.props.onKnock = (impact) => sound.knock(impact);
-  const myDigs: Array<{ x: number; z: number; r: number; d: number }> = [];
-  const applyDig = (x: number, z: number, r: number, d: number) => {
-    const touched = terrain.dig(x, z, r, d);
-    chunks.refloor(touched);
-    sound.knock(6);
+  const myDigs: DigMsg[] = [];
+  const applyDig = (m: DigMsg) => {
+    const level = Math.min(2, Math.max(0, Math.round(m.l))) as Level;
+    const touched = m.t != null ? terrain.digTo(level, m.x, m.z, m.r, m.t) : terrain.dig(level, m.x, m.z, m.r, m.d);
+    chunks.refloor(level, touched);
+    sound.knock(5);
   };
-  net.onDig = (d) => applyDig(d.x, d.z, d.r, d.d);
+  net.onDig = (d) => applyDig(d);
+  let digT = 0;
+  /** Dig where the cursor points. Small cuts, so a tunnel is something you
+   *  carve rather than blast: at the ground a body-wide pit a few tens of cm
+   *  deep; at a wall a body-wide tunnel at your feet; aim UP at a wall and it
+   *  carves a step you can mantle onto — keep going and you have stairs. */
+  const digAtAim = () => {
+    const D = CFG.dig;
+    const pt = aimPoint(D.reach);
+    if (!pt) return;
+    const level = terrain.levelOf(pt.x, pt.z, pt.y);
+    const feet = player.position.y;
+    const wall = pt.y > feet + 1.1;
+    // Snap to the centre of the 1 m cell so every dig drops a whole cell's
+    // four corners — a clean body-wide shaft instead of a one-vertex funnel.
+    const x = Math.floor(pt.x) + 0.5, z = Math.floor(pt.z) + 0.5;
+    let m: DigMsg;
+    if (wall && aimDir.y > 0.2) {
+      const stepY = Math.min(Math.max(pt.y - 0.4, feet + 0.8), feet + D.stepUp);
+      m = { l: level, x, z, r: D.tunnelRadius, d: 0, t: stepY };
+    } else if (wall) {
+      m = { l: level, x, z, r: D.tunnelRadius, d: 0, t: feet - 0.08 };
+    } else {
+      m = { l: level, x, z, r: D.radius, d: D.depth };
+    }
+    applyDig(m);
+    myDigs.push(m);
+    if (myDigs.length > 600) myDigs.shift();
+    net.sendDig(m);
+  };
+  // ── Picking up players (Gang Beasts rules) ──────────────────────────
+  let carrying: string | null = null;
+  let carriedBy: string | null = null;
+  let carriedSince = 0;
+  let targetPlayer: string | null = null;
+  const holdPoint = new THREE.Vector3();
+  net.onGrabbed = (carrier) => {
+    carriedBy = carrier;
+    carriedSince = performance.now();
+    player.carriedAt = player.position.clone();
+    figure.flail = true;
+    if (grab.held) grab.grabOrDrop(player.velocity); // drop whatever I held
+  };
+  net.onThrown = (v) => {
+    carriedBy = null;
+    figure.flail = false;
+    player.launch(v[0], v[1], v[2]);
+    sound.land(-6);
+  };
   let torchSeq = 0;
   const sendMyTorches = () => {
     const mine = chunks.props.placedTorches().filter((t) => t.id.startsWith(net.selfId));
@@ -173,6 +220,8 @@ async function boot(): Promise<void> {
     s: lastSpeed,
     n: net.name,
     b: chat.outgoing(),
+    h: carrying ? [holdPoint.x, holdPoint.y, holdPoint.z] : null,
+    g: carrying,
   }));
 
   const photo = new PhotoMode(p, ph, canvas, figure, () => input.requestLock());
@@ -187,7 +236,8 @@ async function boot(): Promise<void> {
     onRebuild: () => {
       chunks.rebuildAll(player.position);
       applyConfig(p);
-      player.teleport(new THREE.Vector3(player.position.x, terrain.floorAt(player.position.x, player.position.z) + 0.5, player.position.z));
+      const lv = terrain.levelOf(player.position.x, player.position.z, player.position.y);
+      player.teleport(new THREE.Vector3(player.position.x, terrain.levelAt(lv, player.position.x, player.position.z) + 0.5, player.position.z));
     },
     onSpawnRelic: spawnRelic,
   });
@@ -211,6 +261,11 @@ async function boot(): Promise<void> {
   };
   canvas.addEventListener("click", dismiss);
   hint.addEventListener("click", dismiss);
+  (document.getElementById("tuneBtn") as HTMLButtonElement).addEventListener("click", (e) => {
+    e.stopPropagation();
+    tune.toggle();
+    if (tune.open) document.exitPointerLock?.();
+  });
 
   // The crosshair IS the cursor: it follows the mouse in free-look mode and
   // sits at the centre under pointer lock. Aim rays go through it.
@@ -245,6 +300,9 @@ async function boot(): Promise<void> {
   let frames = 0;
   let fps = 0;
   let mapT = 0;
+  // A jump press is latched until a physics step consumes it — frames that
+  // don't step (dt just under 1/60) used to swallow it.
+  let jumpQueued = false;
   const STEP = 1 / 60;
 
   const switchCharacter = (dir: number) => {
@@ -264,7 +322,10 @@ async function boot(): Promise<void> {
   };
 
   const frame = (now: number) => {
-    const dt = Math.min(0.1, (now - last) / 1000);
+    // Clamped both ways: a tab coming back from the background gets one 100 ms
+    // step, and a clock that went backwards (the debug pump) can't stall the
+    // fixed-step accumulator for seconds.
+    const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
     last = now;
     resizePipeline(p, canvas.clientWidth, canvas.clientHeight);
     if (shared && sharedSeed() !== seed) {
@@ -324,7 +385,15 @@ async function boot(): Promise<void> {
       }
       if (input.once("KeyT")) player.teleport(terrain.spawnPoint());
       if (input.once("KeyG")) spawnRelic();
-      if (input.once("KeyF")) {
+      if (input.once("KeyF") && carrying) {
+        // Set them down gently.
+        net.sendThrowPlayer(carrying, [player.velocity.x, 0.5, player.velocity.z]);
+        carrying = null;
+      } else if (input.once("KeyF") && !grab.held && targetPlayer && !carriedBy) {
+        carrying = targetPlayer;
+        net.sendGrabPlayer(carrying);
+        sound.mantle();
+      } else if (input.once("KeyF")) {
         const wasHeld = grab.held;
         // Dropping a relic on the spawn pad collects it.
         if (wasHeld && wasHeld.id.endsWith(":r") && Math.hypot(player.position.x, player.position.z) < 5) {
@@ -348,36 +417,58 @@ async function boot(): Promise<void> {
         sendMyTorches();
       }
       if (input.once("Mouse0")) {
-        if (grab.held) grab.throw(throwDir, player.velocity);
-        else {
-          const pt = aimPoint(DIG_REACH);
-          if (pt) {
-            applyDig(pt.x, pt.z, DIG_RADIUS, DIG_DEPTH);
-            const d = { x: pt.x, z: pt.z, r: DIG_RADIUS, d: DIG_DEPTH };
-            myDigs.push(d);
-            if (myDigs.length > 400) myDigs.shift();
-            net.sendDig(d);
-          }
+        if (carrying) {
+          const v = throwDir.clone().multiplyScalar(11).add(player.velocity);
+          net.sendThrowPlayer(carrying, [v.x, v.y, v.z]);
+          carrying = null;
+          sound.jump();
+        } else if (grab.held) {
+          grab.throw(throwDir, player.velocity);
+        } else {
+          digAtAim();
+          digT = 0;
+        }
+      } else if (input.leftDown && !grab.held && !carrying && !carriedBy) {
+        digT += dt;
+        if (digT >= 1 / CFG.dig.rate) {
+          digT = 0;
+          digAtAim();
         }
       }
     } else {
       input.takeLook();
     }
 
+    // ── Carried? ride the carrier's hands; released if they vanish ────
+    if (carriedBy) {
+      const st = net.peers.get(carriedBy)?.state;
+      if (st?.h && st.g === net.selfId) {
+        player.carriedAt!.set(st.h[0], st.h[1], st.h[2]);
+        carriedSince = performance.now();
+      } else if (performance.now() - carriedSince > 2500) {
+        carriedBy = null;
+        figure.flail = false;
+        player.launch(0, 0, 0);
+      }
+    }
+    if (carrying && !net.peers.has(carrying)) carrying = null;
+
     // ── Simulation ───────────────────────────────────────────────────
     const axes = input.axes();
     wish.set(0, 0, 0).addScaledVector(fwd, axes.z).addScaledVector(rgt, axes.x);
     if (wish.lengthSq() > 1) wish.normalize();
     const run = input.down.has("ShiftLeft") || input.down.has("ShiftRight");
-    let jump = input.once("Space");
-    if (jump && player.grounded && !photo.active) sound.jump();
+    if (input.once("Space")) {
+      jumpQueued = true;
+      if (player.grounded && !photo.active) sound.jump();
+    }
     if (!photo.active) {
       acc += dt;
       while (acc >= STEP) {
         const wasGrounded = player.grounded;
         const vyBefore = player.velocity.y;
-        player.step(STEP, wish, run, jump);
-        jump = false;
+        player.step(STEP, wish, run, jumpQueued);
+        jumpQueued = false;
         grab.step(chest.set(player.position.x, player.position.y + 1.2, player.position.z), fwd);
         ph.world.step();
         player.afterStep();
@@ -413,8 +504,22 @@ async function boot(): Promise<void> {
     grab.holdFrom.copy(chest);
     grab.aim(p.camera.position, aimDir, player.body);
     grab.render(chest, throwDir, player.velocity);
-    aimEl.classList.toggle("hot", !!grab.target);
-    aimEl.classList.toggle("hold", !!grab.held);
+    holdPoint.copy(chest).addScaledVector(fwd, 1.3);
+    holdPoint.y += 0.3;
+    // A player under the cursor, within reach, is grabbable too.
+    targetPlayer = null;
+    if (!grab.held && !carrying) {
+      let best = 0.9;
+      for (const [id, r] of remotes) {
+        const toP = tmp.set(r.pos.x, r.pos.y + 0.9, r.pos.z).sub(p.camera.position);
+        const along = toP.dot(aimDir);
+        if (along < 0) continue;
+        const perp = Math.sqrt(Math.max(0, toP.lengthSq() - along * along));
+        if (perp < best && r.pos.distanceTo(chest) <= PLAYER_REACH) { best = perp; targetPlayer = id; }
+      }
+    }
+    aimEl.classList.toggle("hot", !!grab.target || !!targetPlayer);
+    aimEl.classList.toggle("hold", !!grab.held || !!carrying);
 
     // ── Torches: mine rides upper-left of the lens; then peers; then the
     // nearest standing torches, up to the shader's cap ──────────────────
@@ -438,6 +543,8 @@ async function boot(): Promise<void> {
       d = Math.atan2(Math.sin(d), Math.cos(d));
       r.facing += d * k;
       r.speed = st.s;
+      if (carrying === id) r.pos.copy(holdPoint).setY(holdPoint.y - 0.6);
+      r.figure.flail = carrying === id || (st.g == null && !!st.h) || false;
       r.figure.place(r.pos, r.facing);
       const wantChar = normaliseCharacter(st.c);
       if (r.figure.character !== wantChar && r.loading !== wantChar) {
@@ -463,6 +570,10 @@ async function boot(): Promise<void> {
     voice.update(player.position, peerPositions);
     lastSpeed = speed;
 
+    // The surface is the unprinted page: paper sky up top, ink black below.
+    // Judged against the undug surface, so a pit you are digging is still daylit.
+    const onSurface = player.position.y > terrain.surface(player.position.x, player.position.z) - 6;
+    (p.scene.background as THREE.Color).setHex(onSurface ? PAPER : INK_BLACK);
     renderFrame(p, dt);
     const heads: Array<{ id: string; head: THREE.Vector3; text: string }> = [];
     if (!cam.firstPerson) heads.push({ id: "me", head: tmp.set(player.position.x, player.position.y + figure.height + 0.35, player.position.z).clone(), text: chat.outgoing() });
@@ -490,7 +601,8 @@ async function boot(): Promise<void> {
       fpsT = 0;
       const pos = player.position;
       const biome = terrain.biome(pos.x, pos.z).name;
-      const level = terrain.gallery(pos.x, pos.z) > 0.5 && pos.y > terrain.ceiling(pos.x, pos.z) ? "upper gallery" : "lower cave";
+      const lv = terrain.levelOf(pos.x, pos.z, pos.y);
+      const level = lv === 0 ? "surface" : lv === 1 ? "upper gallery" : "lower cave";
       const peerNames = [...net.peers.values()].map((pe) => `<span class="peer">${pe.state.n}</span>`).join(" · ");
       const roll = msUntilRoll();
       const rollText = shared ? ` · world rolls in ${Math.floor(roll / 3600000)}h ${String(Math.floor((roll % 3600000) / 60000)).padStart(2, "0")}m` : " · private world";
@@ -500,7 +612,7 @@ async function boot(): Promise<void> {
         `you are <span class="peer">${net.name}</span> as ${customFigure ? "your STL" : cast[charIndex]!.name} in ${COLORWAYS[figure.colorway]!.name}` +
         (net.count ? ` · with ${peerNames}` : " · alone so far (share the URL)") + `<br>` +
         `x ${pos.x.toFixed(0)} z ${pos.z.toFixed(0)} · ${state} · ${cam.firstPerson ? "1st" : "3rd"} person · ${input.lookMode === "locked" ? "mouse locked" : "right-drag looks"} · inked ${(p.inkMap.coverage() * 100).toFixed(1)}% · relics ${relics}${reachBonus ? ` (+${reachBonus.toFixed(1)} m torch)` : ""}` +
-        (grab.held ? " · <b>holding</b> (click to throw, F to drop)" : grab.target ? " · <b>F</b> to grab" : " · <b>click</b> digs");
+        (carriedBy ? ` · <b>carried by ${net.peers.get(carriedBy)?.state.n ?? "someone"}</b>` : carrying ? ` · <b>carrying ${net.peers.get(carrying)?.state.n ?? "someone"}</b> (click to throw, F to set down)` : grab.held ? " · <b>holding</b> (click to throw, F to drop)" : targetPlayer ? ` · <b>F</b> to pick up ${net.peers.get(targetPlayer)?.state.n ?? ""}` : grab.target ? " · <b>F</b> to grab" : " · <b>click / hold</b> digs");
     }
     return true;
   };
@@ -514,7 +626,10 @@ async function boot(): Promise<void> {
 
   (window as unknown as { __world: unknown }).__world = {
     seed, shared, player, cam, terrain, chunks, pipeline: p, figure, net, remotes, photo, sound, isOwner, grab, tune, map, voice, input, cfg: CFG,
-    pump, applyDig, spawnRelic,
+    pump, applyDig, digAtAim, spawnRelic,
+    grabPlayer: (id: string) => { carrying = id; net.sendGrabPlayer(id); },
+    throwPlayer: (v: [number, number, number]) => { if (carrying) { net.sendThrowPlayer(carrying, v); carrying = null; } },
+    carried: () => carriedBy,
     setInk: (i: number) => figure.setColorway(i),
     setCharacter: (i: number) => { charIndex = i - 1; switchCharacter(1); },
     shot: () => canvas.toDataURL("image/jpeg", 0.8),
