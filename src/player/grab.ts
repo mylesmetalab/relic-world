@@ -178,8 +178,9 @@ export class Grab {
       this.arcPoints[i * 3 + 1] = y;
       this.arcPoints[i * 3 + 2] = z;
       count = i + 1;
-      if (i > 0 && y <= this.terrain.floor(x, z) + 0.05) {
-        landed = new THREE.Vector3(x, this.terrain.floor(x, z) + 0.03, z);
+      const ground = this.terrain.groundAt(x, z, y);
+      if (i > 0 && y <= ground + 0.05) {
+        landed = new THREE.Vector3(x, ground + 0.03, z);
         break;
       }
     }

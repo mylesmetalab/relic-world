@@ -206,6 +206,17 @@ export class Terrain {
     return level < 2 && this.dug(level, x, z) >= this.thickness(level, x, z) + 0.1;
   }
 
+  /** The highest floor at or under a point (a little above it counts, so a
+   *  thing resting on a floor stays on it). Falls back to the lowest floor. */
+  groundAt(x: number, z: number, y: number): number {
+    let best = -Infinity;
+    const consider = (h: number) => { if (h <= y + 0.3 && h > best) best = h; };
+    consider(this.surfaceAt(x, z));
+    consider(this.floorAt(x, z));
+    if (this.gallery(x, z) > 0.5) consider(this.floor2At(x, z));
+    return best === -Infinity ? this.floorAt(x, z) : best;
+  }
+
   /** Which level a point at height y sits on (nearest level height). */
   levelOf(x: number, z: number, y: number): Level {
     const cands: Array<[Level, number]> = [[0, this.surfaceAt(x, z)], [2, this.floorAt(x, z)]];

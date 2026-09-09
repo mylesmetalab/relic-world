@@ -11,6 +11,7 @@ import { PlayerController } from "./player/controller";
 import { PlayerCamera } from "./player/camera";
 import { availableCharacters, Figure, normaliseCharacter, type CharacterId } from "./player/figure";
 import { Grab } from "./player/grab";
+import { DigMark, type DigPlan } from "./player/digmark";
 import { Sound } from "./audio/sound";
 import { Net, type DigMsg } from "./net/room";
 import { Voice } from "./net/voice";
@@ -149,29 +150,37 @@ async function boot(): Promise<void> {
   };
   net.onDig = (d) => applyDig(d);
   let digT = 0;
-  /** Dig where the cursor points. Small cuts, so a tunnel is something you
+  /** What one click would cut. Small cuts, so a tunnel is something you
    *  carve rather than blast: at the ground a body-wide pit a few tens of cm
    *  deep; at a wall a body-wide tunnel at your feet; aim UP at a wall and it
-   *  carves a step you can mantle onto — keep going and you have stairs. */
-  const digAtAim = () => {
+   *  carves a step you can mantle onto — keep going and you have stairs.
+   *  Snapped to the centre of the 1 m cell so every dig drops a whole cell's
+   *  four corners — a clean body-wide shaft instead of a one-vertex funnel. */
+  const planDig = (): { m: DigMsg; plan: DigPlan } | null => {
     const D = CFG.dig;
     const pt = aimPoint(D.reach);
-    if (!pt) return;
+    if (!pt) return null;
     const level = terrain.levelOf(pt.x, pt.z, pt.y);
     const feet = player.position.y;
     const wall = pt.y > feet + 1.1;
-    // Snap to the centre of the 1 m cell so every dig drops a whole cell's
-    // four corners — a clean body-wide shaft instead of a one-vertex funnel.
     const x = Math.floor(pt.x) + 0.5, z = Math.floor(pt.z) + 0.5;
-    let m: DigMsg;
     if (wall && aimDir.y > 0.2) {
       const stepY = Math.min(Math.max(pt.y - 0.4, feet + 0.8), feet + D.stepUp);
-      m = { l: level, x, z, r: D.tunnelRadius, d: 0, t: stepY };
-    } else if (wall) {
-      m = { l: level, x, z, r: D.tunnelRadius, d: 0, t: feet - 0.08 };
-    } else {
-      m = { l: level, x, z, r: D.radius, d: D.depth };
+      return { m: { l: level, x, z, r: D.tunnelRadius, d: 0, t: stepY }, plan: { kind: "step", level, x, z, floorY: stepY, hit: pt } };
     }
+    if (wall) {
+      const t = feet - 0.08;
+      return { m: { l: level, x, z, r: D.tunnelRadius, d: 0, t }, plan: { kind: "tunnel", level, x, z, floorY: t, hit: pt } };
+    }
+    const m: DigMsg = { l: level, x, z, r: D.radius, d: D.depth };
+    return { m, plan: { kind: "pit", level, x, z, floorY: terrain.levelAt(level, x, z) - D.depth, hit: pt } };
+  };
+  const digAtAim = () => {
+    const planned = planDig();
+    if (!planned) return;
+    const { m, plan } = planned;
+    sound.dig(plan.kind);
+    digMark.burst(plan.hit, plan.kind === "pit" ? 12 : 22);
     applyDig(m);
     myDigs.push(m);
     if (myDigs.length > 600) myDigs.shift();
@@ -207,6 +216,7 @@ async function boot(): Promise<void> {
   let relics = 0;
   net.onCollect = (k) => { chunks.props.removeById(k); };
   const grab = new Grab(p, ph, chunks.props, terrain);
+  const digMark = new DigMark(p, terrain);
   let propSendT = 0;
   let propSnapT = 0;
   let torchSendT = 0;
@@ -520,6 +530,10 @@ async function boot(): Promise<void> {
     }
     aimEl.classList.toggle("hot", !!grab.target || !!targetPlayer);
     aimEl.classList.toggle("hold", !!grab.held || !!carrying);
+    // With empty hands and nothing grabbable under the cursor, show what a click cuts.
+    const canDig = !grab.held && !grab.target && !carrying && !carriedBy && !targetPlayer && !photo.active;
+    digMark.show(canDig ? planDig()?.plan ?? null : null);
+    digMark.update(dt);
 
     // ── Torches: mine rides upper-left of the lens; then peers; then the
     // nearest standing torches, up to the shader's cap ──────────────────
