@@ -1,0 +1,1 @@
+{"nv": 14385, "nf": 28799, "lo": [-0.74591, 0.0, -0.7345], "hi": [0.74591, 3.18984, 0.7345], "note": "16-bit fixed-point positions over lo..hi, then 16-bit triangle indices; decimated Rook (28,799 tris)"}

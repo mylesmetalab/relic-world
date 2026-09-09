@@ -1,0 +1,22 @@
+{
+  "name": "relic-world",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A walkable, procedurally generated blacklight riso-comic cave world — the Riso Relic Tuner's print pipeline as a place you can explore.",
+  "scripts": {
+    "dev": "vite --port 5300 --strictPort",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview --port 5301",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.20.0",
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.4",
+    "typescript": "5.9.3",
+    "vite": "8.2.2"
+  }
+}

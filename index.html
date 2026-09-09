@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Relic World</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0a0a12; overflow: hidden; }
+      canvas#view { display: block; width: 100vw; height: 100vh; }
+      #hud { position: fixed; left: 12px; bottom: 12px; color: #e8e4d0; font: 12px/1.5 ui-monospace, Menlo, monospace; opacity: 0.85; pointer-events: none; text-shadow: 0 1px 0 #000; }
+      #hud b { color: #f2f542; }
+      #hint { position: fixed; inset: 0; display: grid; place-items: center; color: #e8e4d0; font: 16px ui-monospace, Menlo, monospace; background: rgba(10,10,18,0.55); cursor: pointer; }
+      #hint.hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <div id="hint">click to enter · WASD move · Shift run · Space jump · mouse look · V camera · 1–8 cave inks · Q/E figure inks · R reseed</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
