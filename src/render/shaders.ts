@@ -45,10 +45,10 @@ void main() {
 `;
 
 export const TOON_FRAGMENT = /* glsl */ `
-// Up to 4 torches. Tone is the brightest torch's N·L, attenuated to zero at
+// Up to 8 torches. Tone is the brightest torch's N·L, attenuated to zero at
 // that torch's reach — beyond every torch the rock is UNPRINTED (paper).
-uniform vec3 uLights[4];
-uniform float uLightReach[4];
+uniform vec3 uLights[8];
+uniform float uLightReach[8];
 uniform int uLightCount;
 // Where the player's light has BEEN: a world-space R8 map (rect = x0, z0,
 // size, enabled). Once inked, rock stays inked.
@@ -202,7 +202,7 @@ void main() {
   // The brightest torch wins; each fades to nothing at its reach.
   float tone = 0.0;
   float lit = 0.0;
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 8; i++) {
     if (i >= uLightCount) break;
     vec3 toL = uLights[i] - vPosW;
     float dist = length(toL);
@@ -496,8 +496,8 @@ uniform float uBiomeCount;
 uniform float uBiomeScale;
 uniform float uBiomeSeed;
 uniform float uUseBiomes;
-uniform vec3 uLights[4];
-uniform float uLightReach[4];
+uniform vec3 uLights[8];
+uniform float uLightReach[8];
 uniform int uLightCount;
 uniform sampler2D uInkMap;
 uniform vec4 uInkMapRect;
@@ -589,7 +589,7 @@ void main() {
 
   if (uInkMapRect.w > 0.5) {
     float lit = 0.0;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 8; i++) {
       if (i >= uLightCount) break;
       float reach = uLightReach[i];
       // The ceiling is far overhead; judge reach on the horizontal only.

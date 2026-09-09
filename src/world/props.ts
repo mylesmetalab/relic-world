@@ -44,7 +44,11 @@ export type Prop = {
 /** One prop's motion state on the wire. */
 export type PropState = { k: string; p: [number, number, number]; q: [number, number, number, number]; v: [number, number, number]; w: [number, number, number] };
 
-export type ChunkProps = { key: string; props: Prop[]; statics: Array<{ body: RAPIER.RigidBody; collider: RAPIER.Collider }>; alive: boolean };
+export type ChunkProps = { key: string; props: Prop[]; statics: Array<{ body: RAPIER.RigidBody; collider: RAPIER.Collider }>; alive: boolean; torches: string[] };
+
+/** A standing torch: a light that prints the rock around it. */
+export type TorchProp = { id: string; position: THREE.Vector3; reach: number; mesh: THREE.Group; placed: boolean };
+export const TORCH_REACH = 15;
 
 const GOLD = COLORWAYS.findIndex((c) => c.name === "Gold Leaf");
 
@@ -58,6 +62,9 @@ export class Props {
   private readonly q = new THREE.Quaternion();
   /** Fired with the velocity change (m/s) when an awake prop is knocked. */
   onKnock: ((impact: number, x: number, y: number, z: number) => void) | null = null;
+  /** Every torch in the world right now (shrines + placed), by id. */
+  readonly torches = new Map<string, TorchProp>();
+  private torchMat: THREE.ShaderMaterial | null = null;
 
   constructor(private readonly p: Pipeline, private readonly ph: Physics, private readonly terrain: Terrain) {
     p.scene.add(this.root);
@@ -69,7 +76,7 @@ export class Props {
 
   /** Spawn a chunk's props (sync for shards; relics arrive when their model loads). */
   spawn(cx: number, cz: number, chunkSeed: number): ChunkProps {
-    const cp: ChunkProps = { key: `${cx},${cz}`, props: [], statics: [], alive: true };
+    const cp: ChunkProps = { key: `${cx},${cz}`, props: [], statics: [], alive: true, torches: [] };
     const rng = mulberry32(chunkSeed ^ 0x5bd1e995);
     const shards = 2 + Math.floor(rng() * 4);
     for (let i = 0; i < shards; i++) {
@@ -84,6 +91,16 @@ export class Props {
       const prop = this.makeDynamic(id, geo, (geo.attributes.position as THREE.BufferAttribute).array as Float32Array, x, y, z, rng() * Math.PI * 2, this.p.rockMat, ROCK_DENSITY);
       anchorHatch(this.p, prop.mesh as THREE.Mesh, (rng() - 0.5) * 1.4);
       cp.props.push(prop);
+    }
+    // A shrine: a standing torch that lights its room, in about one chunk in five.
+    if (rng() < 0.2) {
+      const x = cx * CHUNK + 3 + rng() * (CHUNK - 6);
+      const z = cz * CHUNK + 3 + rng() * (CHUNK - 6);
+      if (Math.hypot(x, z) > 8 && this.terrain.isOpen(x, z)) {
+        const id = `${cp.key}:shrine`;
+        this.addTorch(id, x, this.terrain.floorAt(x, z), z, false);
+        cp.torches.push(id);
+      }
     }
     if (rng() < 0.35) {
       const x = cx * CHUNK + 4 + rng() * (CHUNK - 8);
@@ -100,6 +117,84 @@ export class Props {
       }
     }
     return cp;
+  }
+
+  /** The torch mesh: a leaning stake with a spiked flame, in the figure inks
+   *  (acid yellow) so it reads as light even before its tone does. */
+  private torchMesh(): THREE.Group {
+    if (!this.torchMat) {
+      this.torchMat = makeFigureMaterial(this.p);
+      setFigureColorway(this.torchMat, COLORWAYS.findIndex((c) => c.name === "Riso Dungeon"));
+      this.torchMat.uniforms.uMinY.value = 0;
+      this.torchMat.uniforms.uMaxY.value = 1.6;
+    }
+    const g = new THREE.Group();
+    const stake = new THREE.CylinderGeometry(0.035, 0.05, 1.1, 5);
+    stake.translate(0, 0.55, 0);
+    const flame = rockGeometry(mulberry32(3), 0.14, 0.5);
+    flame.translate(0, 1.32, 0);
+    for (const geo of [stake, flame]) {
+      const m = new THREE.Mesh(geo, this.torchMat);
+      anchorHatch(this.p, m, 0.9);
+      g.add(m);
+      const hull = new THREE.Mesh(geo, this.p.hullMat);
+      this.p.ndHidden.add(hull);
+      g.add(hull);
+    }
+    g.rotation.z = 0.12;
+    return g;
+  }
+
+  /** Add a torch (shrine or placed). Idempotent by id. */
+  addTorch(id: string, x: number, y: number, z: number, placed: boolean): TorchProp {
+    const existing = this.torches.get(id);
+    if (existing) return existing;
+    const mesh = this.torchMesh();
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = (x * 7 + z * 3) % 6.28;
+    this.root.add(mesh);
+    const t: TorchProp = { id, position: new THREE.Vector3(x, y + 1.35, z), reach: TORCH_REACH, mesh, placed };
+    this.torches.set(id, t);
+    return t;
+  }
+
+  removeTorch(id: string): void {
+    const t = this.torches.get(id);
+    if (!t) return;
+    this.root.remove(t.mesh);
+    t.mesh.traverse((o) => this.p.ndHidden.delete(o));
+    this.torches.delete(id);
+  }
+
+  /** Placed torches (mine or peers'), for the wire. */
+  placedTorches(): TorchProp[] {
+    return [...this.torches.values()].filter((t) => t.placed);
+  }
+
+  /** Drop a golden relic right here (debug / spawn button). */
+  spawnRelicAt(x: number, z: number): void {
+    const key = `spawn:${Date.now()}`;
+    const cp: ChunkProps = { key, props: [], statics: [], alive: true, torches: [] };
+    const kind = GOLEM_KINDS[Math.floor(Math.random() * GOLEM_KINDS.length)]!;
+    this.golemRelic(cp, kind, Math.floor(Math.random() * 1e6), x, z, Math.random() * Math.PI * 2, this.terrain.floorAt(x, z) - 0.5);
+    this.loose.push(cp);
+  }
+  private readonly loose: ChunkProps[] = [];
+
+  /** Remove one prop (a collected relic) by id, wherever it lives. */
+  removeById(id: string): boolean {
+    const prop = this.byId.get(id);
+    if (!prop) return false;
+    this.heldIds.delete(id);
+    this.all.delete(prop);
+    this.byId.delete(id);
+    this.byCollider.delete(prop.collider.handle);
+    this.root.remove(prop.mesh);
+    prop.mesh.traverse((o) => this.p.ndHidden.delete(o));
+    if (prop.material) disposeFigureMaterial(this.p, prop.material);
+    this.ph.world.removeCollider(prop.collider, false);
+    this.ph.world.removeRigidBody(prop.body);
+    return true;
   }
 
   private plinth(cp: ChunkProps, x: number, z: number): void {
@@ -119,7 +214,7 @@ export class Props {
   }
 
   /** A miniature of one of the cave's own characters, in gold, on the plinth. */
-  private golemRelic(cp: ChunkProps, kind: GolemKind, seed: number, x: number, z: number, yaw: number): void {
+  private golemRelic(cp: ChunkProps, kind: GolemKind, seed: number, x: number, z: number, yaw: number, plinthTop?: number): void {
     const geo = buildGolem(kind, seed);
     geo.computeBoundingBox();
     const bb = geo.boundingBox!;
@@ -150,7 +245,7 @@ export class Props {
     const arr = new Float32Array(pts);
     let hullMinY = Infinity;
     for (let i = 1; i < arr.length; i += 3) hullMinY = Math.min(hullMinY, arr[i]!);
-    const y = this.terrain.floor(x, z) + 0.5 - hullMinY + 0.01;
+    const y = (plinthTop ?? this.terrain.floorAt(x, z)) + 0.5 - hullMinY + 0.01;
     const prop = this.makeDynamic(`${cp.key}:r`, geo, arr, x, y, z, yaw, null, GOLD_DENSITY, holder);
     prop.material = material;
     cp.props.push(prop);
@@ -302,6 +397,7 @@ export class Props {
 
   dispose(cp: ChunkProps): void {
     cp.alive = false;
+    for (const id of cp.torches) this.removeTorch(id);
     for (const prop of cp.props) {
       this.all.delete(prop);
       this.byId.delete(prop.id);

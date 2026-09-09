@@ -29,6 +29,8 @@ export type TuneCallbacks = {
   onRender: () => void;
   /** Terrain-shaping values changed — rebuild chunks. */
   onRebuild: () => void;
+  /** Drop a relic in front of the player (also the G key). */
+  onSpawnRelic: () => void;
 };
 
 export class Tune {
@@ -41,7 +43,7 @@ export class Tune {
     this.panel.innerHTML = `<h2>Tuning <span class="k">\` to close</span></h2>
       <div class="tune-actions">
         <button data-k="export">Export JSON</button><button data-k="import">Import</button><button data-k="link">Copy link</button>
-        <button data-k="rebuild">Rebuild world</button><button data-k="reset">Reset</button>
+        <button data-k="rebuild">Rebuild world</button><button data-k="reset">Reset</button><button data-k="spawn">Spawn relic here (G)</button>
       </div>
       <textarea data-k="json" rows="5" placeholder="paste JSON here, then Import"></textarea>
       <label class="tune-check"><input type="checkbox" data-k="stl"> STL miniatures in the cast (Bast, Rook, Cam) — reload to apply</label>
@@ -71,6 +73,7 @@ export class Tune {
       void navigator.clipboard?.writeText(url.toString()).then(() => this.say("link copied"), () => this.say(url.toString()));
     });
     q<HTMLButtonElement>("rebuild").addEventListener("click", () => { cb.onRebuild(); this.say("rebuilt"); });
+    q<HTMLButtonElement>("spawn").addEventListener("click", () => { cb.onSpawnRelic(); this.say("relic dropped in front of you"); });
     const stl = q<HTMLInputElement>("stl");
     stl.checked = stlEnabled();
     stl.addEventListener("change", () => { setStlEnabled(stl.checked); this.say("saved — reload to change the cast"); });

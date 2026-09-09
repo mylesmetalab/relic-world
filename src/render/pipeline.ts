@@ -28,7 +28,7 @@ const ND_FAR = 160;
 const ROCK_RAMP_SCALE = 0.55;
 const CEIL_RAMP_LO = 0.64;
 const CEIL_RAMP_HI = 1.0;
-export const MAX_LIGHTS = 4;
+export const MAX_LIGHTS = 8;
 
 export type Torch = { position: THREE.Vector3; reach: number };
 
@@ -239,7 +239,9 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pip
   const ceilMat = new THREE.ShaderMaterial({
     vertexShader: VAULT_VERTEX,
     fragmentShader: VAULT_FRAGMENT,
-    side: THREE.FrontSide,
+    // Double-sided: the lower cave's ceiling is the slab under the upper
+    // level, and from a gallery's edge you look down onto its top.
+    side: THREE.DoubleSide,
     uniforms: {
       ...lightUniforms(),
       uPaletteTex: { value: bgPaletteTex },

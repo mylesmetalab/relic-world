@@ -7,7 +7,13 @@ export class Input {
   locked = false;
   /** While true (chat open) game keys are ignored and released. */
   captured = false;
+  /** "free": the cursor is visible and the RIGHT button drags the view;
+   *  "locked": pointer lock, FPS style. L toggles. */
+  lookMode: "free" | "locked" = "free";
+  /** Two-finger swipe / wheel turns the view (off while photo mode zooms). */
+  wheelLooks = true;
   private dragging = false;
+  private rightDown = false;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener("keydown", (e) => {
@@ -29,7 +35,7 @@ export class Input {
     // Pointer lock when we can get it; otherwise drag-to-look with the left
     // button (hosts that refuse pointer lock, trackpads in embedded views).
     window.addEventListener("mousemove", (e) => {
-      if (this.locked || (this.dragging && (e.buttons & 1))) {
+      if (this.locked || (this.rightDown && (e.buttons & 2))) {
         this.lookX += e.movementX;
         this.lookY += e.movementY;
       }
@@ -37,14 +43,28 @@ export class Input {
     canvas.addEventListener("mousedown", (e) => {
       if (e.button === 0) {
         this.dragging = true;
-        if (this.locked) this.pressed.add("Mouse0");
+        this.pressed.add("Mouse0");
+      } else if (e.button === 2) {
+        this.rightDown = true;
       }
     });
-    window.addEventListener("mouseup", () => { this.dragging = false; });
+    window.addEventListener("mouseup", (e) => {
+      if (e.button === 0) this.dragging = false;
+      if (e.button === 2) this.rightDown = false;
+    });
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    // Trackpads: a two-finger swipe looks around (free mode). Photo mode uses
+    // the wheel for zoom instead, so it can switch this off.
+    canvas.addEventListener("wheel", (e) => {
+      if (this.locked || !this.wheelLooks) return;
+      e.preventDefault();
+      this.lookX += e.deltaX * 1.1;
+      this.lookY += e.deltaY * 1.1;
+    }, { passive: false });
   }
 
   requestLock(): void {
-    if (this.locked) return;
+    if (this.locked || this.lookMode !== "locked") return;
     try {
       const r = this.canvas.requestPointerLock?.() as unknown as Promise<void> | undefined;
       r?.catch?.(() => {});
@@ -71,9 +91,19 @@ export class Input {
   /** Movement axes in camera space: x right, z forward (each -1..1). */
   axes(): { x: number; z: number } {
     const d = this.down;
-    const x = (d.has("KeyD") || d.has("ArrowRight") ? 1 : 0) - (d.has("KeyA") || d.has("ArrowLeft") ? 1 : 0);
-    const z = (d.has("KeyW") || d.has("ArrowUp") ? 1 : 0) - (d.has("KeyS") || d.has("ArrowDown") ? 1 : 0);
+    const x = (d.has("KeyD") ? 1 : 0) - (d.has("KeyA") ? 1 : 0);
+    const z = (d.has("KeyW") ? 1 : 0) - (d.has("KeyS") ? 1 : 0);
     return { x, z };
+  }
+
+  /** Arrow keys look (for keyboards without a comfortable drag). Pixels-equivalent per second. */
+  arrowLook(dt: number): { x: number; y: number } {
+    const d = this.down;
+    const rate = 520 * dt;
+    return {
+      x: ((d.has("ArrowRight") ? 1 : 0) - (d.has("ArrowLeft") ? 1 : 0)) * rate,
+      y: ((d.has("ArrowDown") ? 1 : 0) - (d.has("ArrowUp") ? 1 : 0)) * rate,
+    };
   }
 
   endFrame(): void {

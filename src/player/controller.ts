@@ -30,6 +30,10 @@ const LEDGE_MIN = 0.7;
 const LEDGE_MAX = 2.45;
 const MANTLE_COST = 28;
 const STAMINA_REGEN = 30;
+/** Wall climb: metres per second up a sheer face, stamina per second. */
+const CLIMB_SPEED = 1.7;
+const CLIMB_DRAIN = 13;
+const CLIMB_DELAY = 0.18; // seconds of pushing into a wall before the climb starts
 
 type Mantle = { from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; upY: number };
 
@@ -42,6 +46,9 @@ export class PlayerController {
   grounded = false;
   stamina = 100;
   mantle: Mantle | null = null;
+  /** True while scaling a wall (stamina draining). */
+  wallClimb = false;
+  private pushT = 0;
   /** Set for one frame when a mantle starts (HUD / sound hook). */
   justMantled = false;
   private sinceGrounded = 0;
@@ -75,7 +82,12 @@ export class PlayerController {
     return (HALF_HEIGHT + RADIUS) * 2;
   }
   get climbing(): boolean {
-    return this.mantle !== null;
+    return this.mantle !== null || this.wallClimb;
+  }
+
+  /** Distance to a wall in direction f at height h above the feet, or null. */
+  private wallAhead(f: THREE.Vector3, h: number, max = RADIUS + 0.6): number | null {
+    return rayDistance(this.ph, { x: this.position.x, y: this.position.y + h, z: this.position.z }, f, max, this.body);
   }
 
   /** Look for a ledge in direction `f` (unit, horizontal). Returns the point
@@ -151,6 +163,41 @@ export class PlayerController {
       return;
     }
 
+    // ── Wall climb ──────────────────────────────────────────────────
+    // Keep pushing into a sheer face and you go up it, hand over hand, while
+    // stamina lasts. Let go of the stick and you drop; run out and you drop;
+    // reach the top and you mantle over.
+    if (this.wallClimb) {
+      const pushing = wish.lengthSq() > 0.09;
+      const f = this.tmp.copy(wish).setY(0).normalize();
+      const wallMid = pushing ? this.wallAhead(f, 0.9) : null;
+      if (!pushing || this.stamina <= 0 || jump) {
+        this.wallClimb = false;
+        this.vy = jump ? JUMP * 0.7 : 0;
+        if (jump) this.velocity.set(-f.x * 3, 0, -f.z * 3);
+      } else if (wallMid == null) {
+        // Nothing in front at chest height any more: the top. Mantle if there
+        // is a tread, else keep rising a little to clear the lip.
+        const ledge = this.findLedge(f);
+        this.wallClimb = false;
+        if (ledge) this.startMantle(ledge);
+        else this.vy = 3.5;
+      } else {
+        this.stamina = Math.max(0, this.stamina - CLIMB_DRAIN * dt);
+        // Slide along the wall with the sideways part of the stick.
+        const along = new THREE.Vector3(-f.z, 0, f.x);
+        const side = wish.dot(along);
+        const desired = { x: (f.x * 0.6 + along.x * side * 1.2) * dt, y: CLIMB_SPEED * dt, z: (f.z * 0.6 + along.z * side * 1.2) * dt };
+        this.cc.computeColliderMovement(this.collider, desired);
+        const m = this.cc.computedMovement();
+        const t = this.body.translation();
+        this.body.setNextKinematicTranslation({ x: t.x + m.x, y: t.y + m.y, z: t.z + m.z });
+        this.grounded = false;
+        this.velocity.set(0, CLIMB_SPEED, 0);
+        return;
+      }
+    }
+
     const speed = run ? RUN : WALK;
     // Horizontal velocity eases toward the wish so starts/stops read as weight.
     const k = Math.min(1, ACCEL * dt / speed);
@@ -187,6 +234,17 @@ export class PlayerController {
       const f = this.tmp.copy(wish).setY(0).normalize();
       const ledge = this.findLedge(f);
       if (ledge) this.startMantle(ledge);
+    }
+    // No ledge in reach but a sheer face ahead: after a beat of pushing, climb.
+    if (pushing && blocked && !this.mantle && this.stamina > 8) {
+      this.pushT += dt;
+      const f = this.tmp.copy(wish).setY(0).normalize();
+      if (this.pushT > CLIMB_DELAY && this.wallAhead(f, 0.9) != null && this.wallAhead(f, 1.6) != null) {
+        this.wallClimb = true;
+        this.pushT = 0;
+      }
+    } else {
+      this.pushT = 0;
     }
     if (this.grounded) this.stamina = Math.min(100, this.stamina + STAMINA_REGEN * dt);
   }

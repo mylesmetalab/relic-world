@@ -19,11 +19,12 @@ Click to take the mouse.
 |---|---|
 | **WASD** / **Shift** / **Space** | move · run · jump |
 | push into a ledge | climb — a mantle up to about head height; costs stamina, which refills on the ground |
-| **mouse** | look |
+| **two-finger swipe** / **arrows** / **right-drag** | look; **L** locks the mouse for FPS-style look |
 | **V** | first ↔ third person |
 | **C** / **⇧C** | change character — nine things the cave grew: Cairn, Shard, Menhir, Spire, Dolmen, Castle, Totem, Wisp, Hound (the STL miniatures Bast, Rook and Cam join the cast via a toggle in the tuning panel) |
 | **Q / E** | your figure's ink colorway |
-| **F** / **click** | grab the prop you're looking at (white outline) · throw it along your look — the dashed arc and landing ring show exactly where it goes |
+| **F** / **click** | grab the prop under the cursor (white outline, the cursor fills in) · throw it along your aim — the dashed arc and landing ring show exactly where it goes · with empty hands, click **digs** |
+| **X** / **G** | plant a torch that lights and prints the rock around it · spawn a relic in front of you |
 | **Tab** | the paper map — the ink map itself, printed in as you explore, with players as dots |
 | **Enter** | chat — what you type streams above your figure as you type; Enter sends, Esc cancels |
 | **\`** | the tuning panel — every number the look and the world are built from; Export gives JSON to paste back, Copy link shares a `?cfg=` URL |
@@ -43,6 +44,13 @@ the rock for you too, and what they push, you see move.
 - **Unprinted until lit.** Rock is bare paper (with a pencil under-drawing)
   until a torch has reached it. Once printed it stays printed for the
   session. Exploring is inking the world in.
+- **It has an upstairs.** Galleries are a second level: the lower cave's
+  ceiling is a slab whose top is another floor with its own ceiling. Shafts
+  drop through; gallery edges are cliffs. Push into any sheer face and you
+  climb it, hand over hand, while stamina lasts — let go and you drop.
+- **You can dig.** Click with empty hands to carve the ground or a wall;
+  digs are shared and persist for the session. Plant torches (X) to light
+  the way back.
 - **Biomes have hard edges.** Six regions, each with its own cave colorway
   and its own pen — hatch pitch, nib, black fill, cracks, stipple — and its
   own ground: Glacier and Void Peaks are terraced into climbable ledges,

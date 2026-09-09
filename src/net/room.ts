@@ -28,6 +28,8 @@ export type PeerState = {
 };
 
 export type Peer = { id: string; state: PeerState; lastAt: number };
+export type DigMsg = { x: number; z: number; r: number; d: number };
+export type TorchMsg = { id: string; p: [number, number, number] };
 
 const ADJECTIVES = ["Hooded", "Quiet", "Ashen", "Sly", "Grim", "Amber", "Lucky", "Wandering", "Pale", "Bold", "Stony", "Feral"];
 
@@ -47,7 +49,13 @@ export class Net {
   readonly room;
   private readonly state;
   private readonly props;
+  private readonly dig;
+  private readonly torches;
+  private readonly collect;
   onProps: ((states: PropState[], peerId: string) => void) | null = null;
+  onDig: ((d: DigMsg, peerId: string) => void) | null = null;
+  onTorches: ((list: TorchMsg[], peerId: string) => void) | null = null;
+  onCollect: ((id: string, peerId: string) => void) | null = null;
   /** Pulled on every heartbeat, so a tab that has never rendered a frame
    *  (opened in the background) still announces itself. */
   private source: (() => PeerState | null) | null = null;
@@ -77,6 +85,12 @@ export class Net {
     };
     this.props = this.room.makeAction<PropState[]>("props");
     this.props.onMessage = (data, ctx) => this.onProps?.(data, ctx.peerId);
+    this.dig = this.room.makeAction<DigMsg>("dig");
+    this.dig.onMessage = (data, ctx) => this.onDig?.(data, ctx.peerId);
+    this.torches = this.room.makeAction<TorchMsg[]>("torches");
+    this.torches.onMessage = (data, ctx) => this.onTorches?.(data, ctx.peerId);
+    this.collect = this.room.makeAction<{ k: string }>("collect");
+    this.collect.onMessage = (data, ctx) => this.onCollect?.(data.k, ctx.peerId);
     this.room.onPeerLeave = (id) => {
       if (this.peers.delete(id)) this.onLeave?.(id);
     };
@@ -106,6 +120,15 @@ export class Net {
 
   sendProps(states: PropState[]): void {
     if (states.length && this.peers.size) void this.props.send(states).catch(() => {});
+  }
+  sendDig(d: DigMsg): void {
+    if (this.peers.size) void this.dig.send(d).catch(() => {});
+  }
+  sendTorches(list: TorchMsg[]): void {
+    if (this.peers.size) void this.torches.send(list).catch(() => {});
+  }
+  sendCollect(k: string): void {
+    if (this.peers.size) void this.collect.send({ k }).catch(() => {});
   }
 
   get count(): number {

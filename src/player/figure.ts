@@ -4,6 +4,8 @@ import { anchorHatch, disposeFigureMaterial, makeFigureMaterial, setFigureColorw
 import { loadPacked, type PackedId } from "../world/models";
 import { buildGolem, GOLEM_MOTION, type GolemKind } from "./golems";
 import { stlEnabled } from "../world/settings";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 /**
  * A figure — the player's body, or another player's. Two kinds:
@@ -41,7 +43,7 @@ export function availableCharacters(): ReadonlyArray<(typeof CHARACTERS)[number]
 export function normaliseCharacter(id: string): CharacterId {
   const legacy: Record<string, CharacterId> = { "golem-1": "golem-cairn", "golem-2": "golem-shard", "golem-3": "golem-menhir" };
   if (legacy[id]) return legacy[id]!;
-  return (CHARACTERS.some((c) => c.id === id) ? id : "bast") as CharacterId;
+  return (CHARACTERS.some((c) => c.id === id) ? id : "golem-cairn") as CharacterId;
 }
 
 /** Yaw (radians) that turns each packed figure to face +z in its own frame. */
@@ -141,6 +143,52 @@ export class Figure {
     this.group.position.set(feet.x, feet.y + lift, feet.z);
     this.group.rotation.y = this.facing;
     this.inner.rotation.z = speed > 0.3 ? Math.sin(this.bob) * m.lean : 0;
+  }
+
+  /** Wear a dropped .stl: welded, Z-up → Y-up, base cut, normalised to height.
+   *  Local only — peers see your last built-in character. */
+  loadCustom(buffer: ArrayBuffer, height: number): void {
+    const raw = new STLLoader().parse(buffer);
+    const geometry = mergeVertices(raw, 1e-4);
+    geometry.rotateX(-Math.PI / 2);
+    geometry.computeBoundingBox();
+    const full = geometry.boundingBox!.clone();
+    const size = new THREE.Vector3();
+    full.getSize(size);
+    const cutY = full.min.y + size.y * 0.07;
+    const idx = geometry.index!.array;
+    const pos = geometry.attributes.position as THREE.BufferAttribute;
+    const kept: number[] = [];
+    for (let i = 0; i + 2 < idx.length; i += 3) {
+      const a = idx[i]!, b = idx[i + 1]!, c = idx[i + 2]!;
+      if (pos.getY(a) < cutY && pos.getY(b) < cutY && pos.getY(c) < cutY) continue;
+      kept.push(a, b, c);
+    }
+    geometry.setIndex(kept);
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    const cutMin = geometry.boundingBox!.min.y;
+    const scale = height / (full.max.y - cutMin);
+    const centre = new THREE.Vector3();
+    full.getCenter(centre);
+    this.inner.clear();
+    if (this.hull) this.p.ndHidden.delete(this.hull);
+    this.ownedGeometry?.dispose();
+    this.ownedGeometry = geometry;
+    this.height = height;
+    this.motion = { bob: 0.06, lean: 0.035, float: 0 };
+    const color = new THREE.Mesh(geometry, this.material);
+    anchorHatch(this.p, color, 0);
+    const hull = new THREE.Mesh(geometry, this.p.hullMat);
+    this.p.ndHidden.add(hull);
+    this.hull = hull;
+    const carrier = new THREE.Group();
+    carrier.add(color, hull);
+    carrier.scale.setScalar(scale);
+    carrier.position.set(-centre.x * scale, -cutMin * scale, -centre.z * scale);
+    this.inner.add(carrier);
+    this.material.uniforms.uMinY.value = full.min.y;
+    this.material.uniforms.uMaxY.value = full.max.y;
   }
 
   /** Direct placement (remote players: interpolated elsewhere). */
