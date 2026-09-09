@@ -6,20 +6,30 @@ import {
   TOON_VERTEX, TOON_FRAGMENT, HULL_VERTEX, HULL_FRAGMENT, ND_VERTEX, ND_FRAGMENT,
   INK_VERTEX, INK_FRAGMENT, VAULT_VERTEX, VAULT_FRAGMENT,
 } from "./shaders";
-import { bakeGradientToRGBA, COLORWAYS, ENVWAYS, type Colorway, type GradientStop } from "./palette";
+import { bakeGradientToRGBA, COLORWAYS, type Colorway, type GradientStop } from "./palette";
+import { BIOMES, BIOME_SCALE } from "../world/biomes";
+import { InkMap } from "../world/inkmap";
 
 /**
  * The print pipeline, lifted from the tuner: colour target → normal+depth
  * target → press pass, all at a fixed PRINT density (canvas × printScale,
  * nearest-filtered). Nothing here knows about the world; it renders whatever
  * is in `scene` with the materials it hands out.
+ *
+ * World additions over the tuner: up to four torches with reach (tone comes
+ * from the brightest), the ink map (rock is bare paper until a torch has
+ * reached it), and biomes (a ramp row + a pen per region, hard-edged).
  */
 
 export const INK_BLACK = 0x0a0a12;
+export const PAPER = 0xe8e4d0;
 const ND_FAR = 160;
 const ROCK_RAMP_SCALE = 0.55;
 const CEIL_RAMP_LO = 0.64;
 const CEIL_RAMP_HI = 1.0;
+export const MAX_LIGHTS = 4;
+
+export type Torch = { position: THREE.Vector3; reach: number };
 
 export type Pipeline = {
   renderer: THREE.WebGLRenderer;
@@ -29,26 +39,27 @@ export type Pipeline = {
   inkPass: ShaderPass;
   ndRT: THREE.WebGLRenderTarget;
   ndMat: THREE.ShaderMaterial;
-  torch: THREE.PointLight;
-  /** Zone-filled figure material (the player). */
-  figureMat: THREE.ShaderMaterial;
   /** Light-banded rock material (floor, boulders). */
   rockMat: THREE.ShaderMaterial;
   /** Unlit posterized ceiling with brush arcs. */
   ceilMat: THREE.ShaderMaterial;
   hullMat: THREE.ShaderMaterial;
-  paletteTex: THREE.DataTexture;
-  hiPaletteTex: THREE.DataTexture;
+  /** One zone-filled material per figure (own palette LUTs + bbox). */
+  figureMats: Set<THREE.ShaderMaterial>;
   bgPaletteTex: THREE.DataTexture;
+  biomeRamps: THREE.DataTexture;
+  inkMap: InkMap;
   /** Objects hidden from the ND pass (hull shells). */
   ndHidden: Set<THREE.Object3D>;
+  torches: Torch[];
   printScale: number;
   printW: number;
   printH: number;
   lastW: number;
   lastH: number;
-  inkIndex: number;
-  caveIndex: number;
+  lastPrintScale: number;
+  /** Accumulated time for the press pass grain. */
+  time: number;
 };
 
 type ToonOpts = {
@@ -56,12 +67,47 @@ type ToonOpts = {
   rim: number; fog: number; fogTone: number; brk: number; pitchScale: number; cracks: number; fill: number;
 };
 
-function makeToonMaterial(paletteTex: THREE.DataTexture, hiTex: THREE.DataTexture, opts: ToonOpts): THREE.ShaderMaterial {
+type SharedSources = { inkMap: InkMap; biomeRamps: THREE.DataTexture };
+
+function penUniforms(): { a: THREE.Vector4[]; b: THREE.Vector4[] } {
+  const a: THREE.Vector4[] = [];
+  const b: THREE.Vector4[] = [];
+  for (let i = 0; i < 8; i++) {
+    const pen = (BIOMES[i] ?? BIOMES[0]!).pen;
+    a.push(new THREE.Vector4(pen.hatchRange, pen.black, pen.pitchScale, pen.nib));
+    b.push(new THREE.Vector4(pen.cracks, pen.stipple, pen.hatchRot, pen.formFollow));
+  }
+  return { a, b };
+}
+
+function lightUniforms(): Record<string, THREE.IUniform> {
+  return {
+    uLights: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3(0, 5, 0)) },
+    uLightReach: { value: new Float32Array(MAX_LIGHTS) },
+    uLightCount: { value: 1 },
+  };
+}
+
+function makeToonMaterial(
+  paletteTex: THREE.DataTexture, hiTex: THREE.DataTexture, shared: SharedSources,
+  opts: ToonOpts, useBiomes: boolean, useInkMap: boolean,
+): THREE.ShaderMaterial {
+  const pens = penUniforms();
   return new THREE.ShaderMaterial({
     vertexShader: TOON_VERTEX,
     fragmentShader: TOON_FRAGMENT,
     uniforms: {
-      uLightPos: { value: new THREE.Vector3(0, 3, 0) },
+      ...lightUniforms(),
+      uInkMap: { value: shared.inkMap.texture },
+      uInkMapRect: { value: shared.inkMap.rect(useInkMap) },
+      uPaper: { value: new THREE.Color(PAPER) },
+      uBiomeRamps: { value: shared.biomeRamps },
+      uBiomeCount: { value: BIOMES.length },
+      uBiomeScale: { value: BIOME_SCALE },
+      uBiomeSeed: { value: 0 },
+      uUseBiomes: { value: useBiomes ? 1 : 0 },
+      uPenA: { value: pens.a },
+      uPenB: { value: pens.b },
       uAmbientColor: { value: new THREE.Color(0x6a3fb8) },
       uInk: { value: new THREE.Color(INK_BLACK) },
       uPaletteTex: { value: paletteTex },
@@ -120,8 +166,8 @@ export function anchorHatch(p: Pipeline, mesh: THREE.Mesh, seed: number): void {
   };
 }
 
-function makeLut(linear = false): THREE.DataTexture {
-  const t = new THREE.DataTexture(new Uint8Array(256 * 4), 256, 1, THREE.RGBAFormat);
+function makeLut(linear = false, rows = 1): THREE.DataTexture {
+  const t = new THREE.DataTexture(new Uint8Array(256 * rows * 4), 256, rows, THREE.RGBAFormat);
   t.colorSpace = THREE.SRGBColorSpace;
   t.minFilter = linear ? THREE.LinearFilter : THREE.NearestFilter;
   t.magFilter = linear ? THREE.LinearFilter : THREE.NearestFilter;
@@ -129,67 +175,81 @@ function makeLut(linear = false): THREE.DataTexture {
   return t;
 }
 
-function writeLut(tex: THREE.DataTexture, stops: GradientStop[]): void {
-  (tex.image.data as Uint8Array).set(bakeGradientToRGBA(stops, 256));
+function writeLut(tex: THREE.DataTexture, stops: GradientStop[], row = 0): void {
+  (tex.image.data as Uint8Array).set(bakeGradientToRGBA(stops, 256), row * 256 * 4);
   tex.needsUpdate = true;
 }
 
-export function setInkColorway(p: Pipeline, index: number): Colorway {
+/** A figure's own zone material: two LUTs it can recolour independently. */
+export function makeFigureMaterial(p: Pipeline): THREE.ShaderMaterial {
+  const base = makeLut();
+  const hi = makeLut();
+  const m = makeToonMaterial(base, hi, { inkMap: p.inkMap, biomeRamps: p.biomeRamps }, {
+    bands: 4, rampScale: 1, shadowGamma: 1.0, colorMode: 0, rim: 0.4, fog: 0, fogTone: 0, brk: 0, pitchScale: 1, cracks: 0, fill: 0.3,
+  }, false, false);
+  m.userData.lutBase = base;
+  m.userData.lutHi = hi;
+  p.figureMats.add(m);
+  setFigureColorway(m, 0);
+  return m;
+}
+
+export function disposeFigureMaterial(p: Pipeline, m: THREE.ShaderMaterial): void {
+  p.figureMats.delete(m);
+  (m.userData.lutBase as THREE.DataTexture).dispose();
+  (m.userData.lutHi as THREE.DataTexture).dispose();
+  m.dispose();
+}
+
+export function setFigureColorway(m: THREE.ShaderMaterial, index: number): Colorway {
   const cw = COLORWAYS[((index % COLORWAYS.length) + COLORWAYS.length) % COLORWAYS.length]!;
-  p.inkIndex = COLORWAYS.indexOf(cw);
-  writeLut(p.paletteTex, cw.base);
-  writeLut(p.hiPaletteTex, cw.hi);
+  writeLut(m.userData.lutBase as THREE.DataTexture, cw.base);
+  writeLut(m.userData.lutHi as THREE.DataTexture, cw.hi);
+  m.userData.colorway = COLORWAYS.indexOf(cw);
   return cw;
 }
 
-export function setCaveColorway(p: Pipeline, index: number): string {
-  const ew = ENVWAYS[((index % ENVWAYS.length) + ENVWAYS.length) % ENVWAYS.length]!;
-  p.caveIndex = ENVWAYS.indexOf(ew);
-  writeLut(p.bgPaletteTex, ew.ramp);
-  return ew.name;
-}
-
 export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pipeline {
-  // preserveDrawingBuffer so a harness (or a screenshot key) can read the
-  // canvas back after the frame; the cost is one buffer copy per frame.
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance", preserveDrawingBuffer: true });
+  // preserveDrawingBuffer so photo mode (and a harness) can read the canvas
+  // back after the frame; the cost is one buffer copy per frame.
+  const renderer = new THREE.WebGLRenderer({
+    canvas, antialias: false, alpha: false, powerPreference: "high-performance", preserveDrawingBuffer: true,
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(INK_BLACK, 1);
   renderer.toneMapping = THREE.NoToneMapping;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(INK_BLACK);
-
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400);
 
-  scene.add(new THREE.AmbientLight(0x6a3fb8, 0.55));
-  // The carried torch — the one light the tone is measured against. main()
-  // parks it up-left-front of the player every frame.
-  const torch = new THREE.PointLight(0xc8ffd8, 6, 60, 1.6);
-  scene.add(torch);
+  const inkMap = new InkMap();
+  const biomeRamps = makeLut(true, BIOMES.length);
+  BIOMES.forEach((b, i) => writeLut(biomeRamps, b.ramp, i));
+  const shared: SharedSources = { inkMap, biomeRamps };
 
-  const paletteTex = makeLut();
-  const hiPaletteTex = makeLut();
   const bgPaletteTex = makeLut(true);
+  writeLut(bgPaletteTex, BIOMES[0]!.ramp);
 
-  const figureMat = makeToonMaterial(paletteTex, hiPaletteTex, {
-    bands: 4, rampScale: 1, shadowGamma: 1.0, colorMode: 0, rim: 0.4, fog: 0, fogTone: 0, brk: 0, pitchScale: 1, cracks: 0, fill: 0.3,
-  });
-  const rockMat = makeToonMaterial(bgPaletteTex, bgPaletteTex, {
+  const rockMat = makeToonMaterial(bgPaletteTex, bgPaletteTex, shared, {
     bands: 3, rampScale: ROCK_RAMP_SCALE, shadowGamma: 1.25, colorMode: 1, rim: 0, fog: 0.5, fogTone: 0.4, brk: 0.3, pitchScale: 1.3, cracks: 0.55, fill: 0,
-  });
-  rockMat.uniforms.uHatchRange.value = 0.55;
-  rockMat.uniforms.uBlack.value = 0.3;
-  rockMat.uniforms.uNib.value = 1.0;
-  rockMat.uniforms.uStipple.value = 0.35;
-  rockMat.uniforms.uFormFollow.value = 0.35;
+  }, true, true);
 
   const ceilMat = new THREE.ShaderMaterial({
     vertexShader: VAULT_VERTEX,
     fragmentShader: VAULT_FRAGMENT,
     side: THREE.FrontSide,
     uniforms: {
+      ...lightUniforms(),
       uPaletteTex: { value: bgPaletteTex },
+      uBiomeRamps: { value: biomeRamps },
+      uBiomeCount: { value: BIOMES.length },
+      uBiomeScale: { value: BIOME_SCALE },
+      uBiomeSeed: { value: 0 },
+      uUseBiomes: { value: 1 },
+      uInkMap: { value: inkMap.texture },
+      uInkMapRect: { value: inkMap.rect(true) },
+      uPaper: { value: new THREE.Color(PAPER) },
       uRampLo: { value: CEIL_RAMP_LO },
       uRampHi: { value: CEIL_RAMP_HI },
       uMinY: { value: 6 },
@@ -236,7 +296,7 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pip
       uSpeck: { value: 0.004 },
       uTime: { value: 0 },
       uInk: { value: new THREE.Color(INK_BLACK) },
-      uPaper: { value: new THREE.Color(0xe8e4d0) },
+      uPaper: { value: new THREE.Color(PAPER) },
     },
     vertexShader: INK_VERTEX,
     fragmentShader: INK_FRAGMENT,
@@ -245,23 +305,49 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pip
   inkPass.renderToScreen = true;
   composer.addPass(inkPass);
 
-  const p: Pipeline = {
-    renderer, scene, camera, composer, inkPass, ndRT, ndMat, torch,
-    figureMat, rockMat, ceilMat, hullMat, paletteTex, hiPaletteTex, bgPaletteTex,
-    ndHidden: new Set(), printScale, printW: 2, printH: 2, lastW: 0, lastH: 0, inkIndex: 0, caveIndex: 0,
+  return {
+    renderer, scene, camera, composer, inkPass, ndRT, ndMat,
+    rockMat, ceilMat, hullMat, figureMats: new Set(), bgPaletteTex, biomeRamps, inkMap,
+    ndHidden: new Set(), torches: [], printScale, printW: 2, printH: 2, lastW: 0, lastH: 0, lastPrintScale: 0, time: 0,
   };
-  setInkColorway(p, 0);
-  setCaveColorway(p, 0);
-  return p;
+}
+
+export function setWorldSeed(p: Pipeline, seed: number): void {
+  p.rockMat.uniforms.uBiomeSeed.value = seed;
+  p.ceilMat.uniforms.uBiomeSeed.value = seed;
+  p.ceilMat.uniforms.uSeed.value = seed;
+}
+
+/** Turn "unprinted until lit" on/off (photo mode wants everything printed). */
+export function setInkMapEnabled(p: Pipeline, on: boolean): void {
+  p.rockMat.uniforms.uInkMapRect.value.w = on ? 1 : 0;
+  p.ceilMat.uniforms.uInkMapRect.value.w = on ? 1 : 0;
+}
+
+/** Push the torch list into every lit material. */
+function applyTorches(p: Pipeline): void {
+  const n = Math.min(MAX_LIGHTS, p.torches.length);
+  const mats = [p.rockMat, p.ceilMat, ...p.figureMats];
+  for (const m of mats) {
+    const u = m.uniforms;
+    u.uLightCount.value = n;
+    const arr = u.uLights.value as THREE.Vector3[];
+    const reach = u.uLightReach.value as Float32Array;
+    for (let i = 0; i < n; i++) {
+      arr[i]!.copy(p.torches[i]!.position);
+      reach[i] = p.torches[i]!.reach;
+    }
+  }
 }
 
 /** Size renderer + camera to the canvas, and the print targets to canvas ×
  *  printScale. Tracked independently of the renderer's own guard. */
 export function resizePipeline(p: Pipeline, w: number, h: number): void {
   if (w <= 0 || h <= 0) return;
-  if (p.lastW === w && p.lastH === h) return;
+  if (p.lastW === w && p.lastH === h && p.lastPrintScale === p.printScale) return;
   p.lastW = w;
   p.lastH = h;
+  p.lastPrintScale = p.printScale;
   p.renderer.setSize(w, h, false);
   const pr = p.renderer.getPixelRatio();
   const rw = Math.max(2, Math.round(w * pr * p.printScale));
@@ -278,6 +364,8 @@ export function resizePipeline(p: Pipeline, w: number, h: number): void {
 /** Normal+depth pass (everything but the hull shells), then colour → press. */
 export function renderFrame(p: Pipeline, dt: number): void {
   const { renderer, scene, camera } = p;
+  applyTorches(p);
+  p.inkMap.flush();
   const prevBackground = scene.background;
   const prevClear = renderer.getClearColor(new THREE.Color());
   for (const o of p.ndHidden) o.visible = false;
@@ -292,8 +380,23 @@ export function renderFrame(p: Pipeline, dt: number): void {
   scene.background = prevBackground;
   for (const o of p.ndHidden) o.visible = true;
 
-  p.inkPass.uniforms.uTime.value += dt;
-  p.figureMat.uniforms.uLightPos.value.copy(p.torch.position);
-  p.rockMat.uniforms.uLightPos.value.copy(p.torch.position);
+  p.time += dt;
+  p.inkPass.uniforms.uTime.value = p.time;
   p.composer.render();
+}
+
+/** Render one frame at an arbitrary size (photo export) and return a PNG
+ *  data URL. Restores the live size afterwards. */
+export function renderStill(p: Pipeline, w: number, h: number): string {
+  const liveW = p.lastW, liveH = p.lastH;
+  const pr = p.renderer.getPixelRatio();
+  p.renderer.setPixelRatio(1);
+  p.lastW = 0; // force a resize
+  resizePipeline(p, w, h);
+  renderFrame(p, 0);
+  const url = p.renderer.domElement.toDataURL("image/png");
+  p.renderer.setPixelRatio(pr);
+  p.lastW = 0;
+  resizePipeline(p, liveW, liveH);
+  return url;
 }

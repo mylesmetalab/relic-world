@@ -1,29 +1,45 @@
 import * as THREE from "three";
-import { createPipeline, renderFrame, resizePipeline, setCaveColorway, setInkColorway } from "./render/pipeline";
-import { COLORWAYS, ENVWAYS } from "./render/palette";
+import { createPipeline, renderFrame, resizePipeline, setWorldSeed } from "./render/pipeline";
+import { COLORWAYS } from "./render/palette";
 import { initPhysics, rayDistance } from "./physics/world";
 import { Terrain } from "./world/terrain";
 import { ChunkManager } from "./world/chunks";
 import { Input } from "./player/input";
 import { PlayerController } from "./player/controller";
 import { PlayerCamera } from "./player/camera";
-import { Figure } from "./player/figure";
+import { CHARACTERS, Figure, type CharacterId } from "./player/figure";
+import { Net, type PeerState } from "./net/room";
+import { PhotoMode } from "./ui/photo";
 
 const canvas = document.getElementById("view") as HTMLCanvasElement;
 const hud = document.getElementById("hud") as HTMLDivElement;
 const hint = document.getElementById("hint") as HTMLDivElement;
+const stamina = document.getElementById("stamina") as HTMLDivElement;
+const staminaBar = stamina.firstElementChild as HTMLElement;
 
 const url = new URL(location.href);
 const seed = Number(url.searchParams.get("seed") ?? 7) || 7;
+const roomOverride = url.searchParams.get("room") ?? undefined;
+const LOCAL_REACH = 17;
+const REMOTE_REACH = 12;
+
+type Remote = {
+  figure: Figure;
+  pos: THREE.Vector3;
+  facing: number;
+  torch: THREE.Vector3;
+  speed: number;
+  loading: CharacterId | null;
+};
 
 async function boot(): Promise<void> {
   const p = createPipeline(canvas, 0.6);
+  setWorldSeed(p, seed);
   const ph = await initPhysics();
   const terrain = new Terrain(seed);
   const chunks = new ChunkManager(p, ph, terrain, 2);
   const spawn = terrain.spawnPoint();
   chunks.buildAll(spawn);
-  p.ceilMat.uniforms.uSeed.value = seed;
 
   // Heightfield orientation self-check: cast down at a few points and compare
   // with the analytic floor. A transposed matrix shows up here as metres.
@@ -44,19 +60,36 @@ async function boot(): Promise<void> {
   const player = new PlayerController(ph, spawn);
   const cam = new PlayerCamera(p.camera, ph);
   const figure = new Figure(p);
-  await figure.load("bast", 1.7);
+  let charIndex = Math.max(0, CHARACTERS.findIndex((c) => c.id === (localStorage.getItem("relic-world:character") ?? "bast")));
+  await figure.load(CHARACTERS[charIndex]!.id, 1.7);
+  figure.setColorway(Number(localStorage.getItem("relic-world:ink") ?? 0));
 
-  setInkColorway(p, COLORWAYS.findIndex((c) => c.name === "Riso Dungeon"));
-  setCaveColorway(p, ENVWAYS.findIndex((e) => e.name === "Dungeon Cave"));
+  const net = new Net(seed, roomOverride);
+  const remotes = new Map<string, Remote>();
+  net.onJoin = (id) => {
+    const r: Remote = { figure: new Figure(p), pos: new THREE.Vector3(), facing: 0, torch: new THREE.Vector3(), speed: 0, loading: null };
+    const st = net.peers.get(id)!.state;
+    r.pos.set(...st.p);
+    r.torch.set(...st.t);
+    remotes.set(id, r);
+  };
+  net.onLeave = (id) => {
+    remotes.get(id)?.figure.dispose();
+    remotes.delete(id);
+  };
+  window.addEventListener("beforeunload", () => net.leave());
 
-  canvas.addEventListener("click", () => input.requestLock());
+  const photo = new PhotoMode(p, ph, canvas, figure, () => input.requestLock());
+
+  canvas.addEventListener("click", () => { if (!photo.active) input.requestLock(); });
   hint.addEventListener("click", () => input.requestLock());
-  document.addEventListener("pointerlockchange", () => hint.classList.toggle("hidden", input.locked));
+  document.addEventListener("pointerlockchange", () => hint.classList.toggle("hidden", input.locked || photo.active));
 
   const wish = new THREE.Vector3();
   const fwd = new THREE.Vector3();
   const rgt = new THREE.Vector3();
-  const torchOffset = new THREE.Vector3();
+  const torchPos = new THREE.Vector3();
+  const tmp = new THREE.Vector3();
   let acc = 0;
   let last = performance.now();
   let fpsT = 0;
@@ -64,58 +97,117 @@ async function boot(): Promise<void> {
   let fps = 0;
   const STEP = 1 / 60;
 
+  const switchCharacter = (dir: number) => {
+    charIndex = (charIndex + dir + CHARACTERS.length) % CHARACTERS.length;
+    const id = CHARACTERS[charIndex]!.id;
+    localStorage.setItem("relic-world:character", id);
+    void figure.load(id, 1.7);
+  };
+
   const frame = (now: number) => {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     resizePipeline(p, canvas.clientWidth, canvas.clientHeight);
 
-    const look = input.takeLook();
-    cam.look(look.x, look.y);
-    if (input.once("KeyV")) {
-      cam.firstPerson = !cam.firstPerson;
-      figure.setVisible(!cam.firstPerson);
+    // ── Keys ─────────────────────────────────────────────────────────
+    if (input.once("KeyP")) {
+      if (photo.active) photo.exit();
+      else photo.enter(cam.yaw, cam.pitch, 4.5);
+      hint.classList.toggle("hidden", input.locked || photo.active);
+      hud.hidden = photo.active;
     }
-    for (let i = 1; i <= 8; i++) if (input.once(`Digit${i}`)) setCaveColorway(p, i - 1);
-    if (input.once("KeyQ")) setInkColorway(p, p.inkIndex - 1);
-    if (input.once("KeyE")) setInkColorway(p, p.inkIndex + 1);
-    if (input.once("KeyR")) {
-      url.searchParams.set("seed", String(Math.floor(Math.random() * 999) + 1));
-      location.href = url.toString();
+    if (!photo.active) {
+      const look = input.takeLook();
+      cam.look(look.x, look.y);
+      if (input.once("KeyV")) {
+        cam.firstPerson = !cam.firstPerson;
+        figure.setVisible(!cam.firstPerson);
+      }
+      if (input.once("KeyC")) switchCharacter(1);
+      let inkChanged = false;
+      if (input.once("KeyQ")) { figure.setColorway(figure.colorway - 1); inkChanged = true; }
+      if (input.once("KeyE")) { figure.setColorway(figure.colorway + 1); inkChanged = true; }
+      if (inkChanged) localStorage.setItem("relic-world:ink", String(figure.colorway));
+      if (input.once("KeyR")) {
+        url.searchParams.set("seed", String(Math.floor(Math.random() * 999) + 1));
+        location.href = url.toString();
+      }
+      if (input.once("KeyT")) player.teleport(terrain.spawnPoint());
+    } else {
+      input.takeLook();
     }
-    if (input.once("KeyT")) player.teleport(terrain.spawnPoint());
 
+    // ── Simulation ───────────────────────────────────────────────────
     const axes = input.axes();
     cam.forward(fwd);
     cam.right(rgt);
     wish.set(0, 0, 0).addScaledVector(fwd, axes.z).addScaledVector(rgt, axes.x);
     if (wish.lengthSq() > 1) wish.normalize();
     const run = input.down.has("ShiftLeft") || input.down.has("ShiftRight");
-    const jump = input.once("Space");
-
-    acc += dt;
-    let jumped = jump;
-    while (acc >= STEP) {
-      player.step(STEP, wish, run, jumped);
-      jumped = false;
-      ph.world.step();
-      player.afterStep();
-      acc -= STEP;
+    let jump = input.once("Space");
+    if (!photo.active) {
+      acc += dt;
+      while (acc >= STEP) {
+        player.step(STEP, wish, run, jump);
+        jump = false;
+        ph.world.step();
+        player.afterStep();
+        acc -= STEP;
+      }
     }
 
     chunks.update(player.position);
-    const speed = Math.hypot(player.velocity.x, player.velocity.z);
-    figure.update(player.position, wish, speed, dt);
-    cam.update(player.position, dt, player.body);
-    // The torch rides with the VIEWER, upper-left of the lens — the tuner's
-    // light: the side of everything that faces the camera takes the fill,
-    // the far side falls into hatch and black.
-    torchOffset.copy(rgt).multiplyScalar(-3.5).addScaledVector(fwd, -1);
-    p.torch.position.copy(p.camera.position).add(torchOffset);
-    p.torch.position.y += 2.2;
+    const speed = photo.active ? 0 : Math.hypot(player.velocity.x, player.velocity.z);
+    figure.update(player.position, wish, speed, photo.active ? 0 : dt);
+    if (photo.active) photo.update(player.position, player.body);
+    else cam.update(player.position, dt, player.body);
+
+    // ── Torches: mine rides upper-left of the lens; the rest are peers ──
+    torchPos.copy(rgt).multiplyScalar(-3.5).addScaledVector(fwd, -1);
+    torchPos.add(p.camera.position);
+    torchPos.y += 2.2;
+    p.torches.length = 0;
+    p.torches.push({ position: torchPos, reach: LOCAL_REACH });
+    p.inkMap.stamp(player.position.x, player.position.z, 13);
+
+    // ── Peers ────────────────────────────────────────────────────────
+    const k = 1 - Math.exp(-dt * 10);
+    for (const [id, r] of remotes) {
+      const st = net.peers.get(id)?.state;
+      if (!st) continue;
+      r.pos.lerp(tmp.set(st.p[0], st.p[1], st.p[2]), k);
+      r.torch.lerp(tmp.set(st.t[0], st.t[1], st.t[2]), k);
+      let d = st.f - r.facing;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      r.facing += d * k;
+      r.speed = st.s;
+      r.figure.place(r.pos, r.facing);
+      if (r.figure.character !== st.c && r.loading !== st.c) {
+        r.loading = st.c;
+        void r.figure.load(st.c, 1.7).then(() => { r.loading = null; });
+      }
+      if (r.figure.colorway !== st.i) r.figure.setColorway(st.i);
+      if (p.torches.length < 4) p.torches.push({ position: r.torch, reach: REMOTE_REACH });
+      p.inkMap.stamp(r.pos.x, r.pos.z, 9);
+    }
+    const mine: PeerState = {
+      p: [player.position.x, player.position.y, player.position.z],
+      f: figure.group.rotation.y,
+      t: [torchPos.x, torchPos.y, torchPos.z],
+      c: figure.character,
+      i: figure.colorway,
+      s: speed,
+      n: net.name,
+    };
+    net.update(dt, mine);
 
     renderFrame(p, dt);
     input.endFrame();
 
+    // ── HUD ──────────────────────────────────────────────────────────
+    const showStamina = player.stamina < 99.5 || player.climbing;
+    stamina.classList.toggle("show", showStamina);
+    staminaBar.style.width = `${player.stamina}%`;
     frames++;
     fpsT += dt;
     if (fpsT >= 0.5) {
@@ -123,10 +215,13 @@ async function boot(): Promise<void> {
       frames = 0;
       fpsT = 0;
       const pos = player.position;
+      const biome = terrain.biome(pos.x, pos.z).name;
+      const peerNames = [...net.peers.values()].map((pe) => `<span class="peer">${pe.state.n}</span>`).join(" · ");
       hud.innerHTML =
-        `<b>Relic World</b> seed ${seed} · ${fps} fps · chunks ${chunks.count}<br>` +
-        `x ${pos.x.toFixed(1)} y ${pos.y.toFixed(1)} z ${pos.z.toFixed(1)} · ${player.grounded ? "ground" : "air"}<br>` +
-        `inks ${COLORWAYS[p.inkIndex]!.name} · cave ${ENVWAYS[p.caveIndex]!.name} · ${cam.firstPerson ? "1st" : "3rd"} person`;
+        `<b>Relic World</b> seed ${seed} · ${fps} fps · ${biome}<br>` +
+        `you are <span class="peer">${net.name}</span> as ${CHARACTERS[charIndex]!.name} in ${COLORWAYS[figure.colorway]!.name}` +
+        (net.count ? ` · with ${peerNames}` : net.connected ? " · alone so far (share the URL)" : " · offline") + `<br>` +
+        `x ${pos.x.toFixed(0)} z ${pos.z.toFixed(0)} · ${player.climbing ? "climbing" : player.grounded ? "ground" : "air"} · ${cam.firstPerson ? "1st" : "3rd"} person · inked ${(p.inkMap.coverage() * 100).toFixed(1)}%`;
     }
     requestAnimationFrame(frame);
   };
@@ -134,14 +229,9 @@ async function boot(): Promise<void> {
 
   // Debug handle for harness verification.
   (window as unknown as { __world: unknown }).__world = {
-    seed,
-    player,
-    cam,
-    terrain,
-    chunks,
-    pipeline: p,
-    setInk: (i: number) => setInkColorway(p, i),
-    setCave: (i: number) => setCaveColorway(p, i),
+    seed, player, cam, terrain, chunks, pipeline: p, figure, net, remotes, photo,
+    setInk: (i: number) => figure.setColorway(i),
+    setCharacter: (i: number) => { charIndex = i - 1; switchCharacter(1); },
     shot: () => canvas.toDataURL("image/jpeg", 0.8),
   };
 }

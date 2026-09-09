@@ -1,12 +1,19 @@
 import * as THREE from "three";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import type { Physics } from "../physics/world";
+import { rayDistance } from "../physics/world";
 
 /**
  * Kinematic character controller. Rapier resolves the capsule against the
  * terrain heightfields and rock hulls; auto-step is the first rung of
  * climbing (knee-high rock is just walked over), slope limits turn steep
- * pinches into walls. Gravity and jump are integrated here.
+ * pinches into walls. Gravity, jump and the climb state machine live here.
+ *
+ * Climbing = ledge grab + mantle. When you push into a wall (or fall past one
+ * while pushing toward it) three rays look for a ledge between knee and
+ * reach height with headroom above it; if there is one and you have the
+ * stamina, the body is carried up and over it along an eased path while
+ * physics is bypassed. Stamina refills on the ground.
  */
 
 const RADIUS = 0.35;
@@ -18,6 +25,13 @@ const GRAVITY = -20;
 const JUMP = 7.4;
 const STEP_HEIGHT = 0.55;
 const COYOTE = 0.12;
+/** Ledge search: from above auto-step to a full reach overhead. */
+const LEDGE_MIN = 0.7;
+const LEDGE_MAX = 2.45;
+const MANTLE_COST = 28;
+const STAMINA_REGEN = 30;
+
+type Mantle = { from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; upY: number };
 
 export class PlayerController {
   readonly body: RAPIER.RigidBody;
@@ -26,8 +40,13 @@ export class PlayerController {
   readonly position = new THREE.Vector3();
   readonly velocity = new THREE.Vector3();
   grounded = false;
+  stamina = 100;
+  mantle: Mantle | null = null;
+  /** Set for one frame when a mantle starts (HUD / sound hook). */
+  justMantled = false;
   private sinceGrounded = 0;
   private vy = 0;
+  private readonly tmp = new THREE.Vector3();
 
   constructor(private readonly ph: Physics, spawn: THREE.Vector3) {
     const { R, world } = ph;
@@ -54,16 +73,88 @@ export class PlayerController {
   get height(): number {
     return (HALF_HEIGHT + RADIUS) * 2;
   }
+  get climbing(): boolean {
+    return this.mantle !== null;
+  }
+
+  /** Look for a ledge in direction `f` (unit, horizontal). Returns the point
+   *  the feet should land on, or null. */
+  private findLedge(f: THREE.Vector3): THREE.Vector3 | null {
+    const feet = this.position;
+    const exclude = this.body;
+    // 1. Something in front, between knee and head — the nearest hit wins,
+    //    so a 1 m step and a 2 m wall both register.
+    let dWall: number | null = null;
+    for (const h of [0.5, 1.0, 1.5]) {
+      const d = rayDistance(this.ph, { x: feet.x, y: feet.y + h, z: feet.z }, f, RADIUS + 0.9, exclude);
+      if (d != null && (dWall == null || d < dWall)) dWall = d;
+    }
+    if (dWall == null) return null;
+    // 2. Drop rays from above at a few distances past the wall face and take
+    //    the first TREAD — a top that is flat for another 0.4 m, so a
+    //    heightfield riser (a steep 1 m slope) isn't mistaken for a ledge
+    //    halfway up.
+    const topY = feet.y + LEDGE_MAX + 0.4;
+    const span = LEDGE_MAX + 0.4 - LEDGE_MIN + 0.01;
+    const down = { x: 0, y: -1, z: 0 };
+    for (const past of [0.55, 0.95, 1.35, 1.75]) {
+      const over = dWall + past;
+      const px = feet.x + f.x * over, pz = feet.z + f.z * over;
+      const dTop = rayDistance(this.ph, { x: px, y: topY, z: pz }, down, span, exclude);
+      if (dTop == null) continue;
+      const ledgeY = topY - dTop;
+      const rise = ledgeY - feet.y;
+      if (rise < LEDGE_MIN || rise > LEDGE_MAX) continue;
+      const dAhead = rayDistance(this.ph, { x: px + f.x * 0.4, y: topY, z: pz + f.z * 0.4 }, down, span + 1, exclude);
+      if (dAhead == null || Math.abs((topY - dAhead) - ledgeY) > 0.15) continue;
+      // 3. Headroom for the capsule on the tread.
+      const head = rayDistance(this.ph, { x: px, y: ledgeY + 0.15, z: pz }, { x: 0, y: 1, z: 0 }, this.height, exclude);
+      if (head != null) continue;
+      return new THREE.Vector3(px + f.x * 0.15, ledgeY + 0.04, pz + f.z * 0.15);
+    }
+    return null;
+  }
+
+  private startMantle(to: THREE.Vector3): void {
+    const rise = to.y - this.position.y;
+    this.mantle = {
+      from: this.position.clone(),
+      to,
+      t: 0,
+      dur: 0.42 + rise * 0.14,
+      upY: to.y + 0.06,
+    };
+    this.stamina -= MANTLE_COST;
+    this.vy = 0;
+    this.velocity.set(0, 0, 0);
+    this.justMantled = true;
+  }
 
   /** `wish` is the desired horizontal direction in world space (length ≤ 1). */
   step(dt: number, wish: THREE.Vector3, run: boolean, jump: boolean): void {
+    this.justMantled = false;
+    if (this.mantle) {
+      const m = this.mantle;
+      m.t = Math.min(1, m.t + dt / m.dur);
+      // Up first (to just above the ledge), then forward onto it.
+      const up = Math.min(1, m.t / 0.6);
+      const fwd = Math.max(0, (m.t - 0.55) / 0.45);
+      const eu = up * up * (3 - 2 * up);
+      const ef = fwd * fwd * (3 - 2 * fwd);
+      const x = m.from.x + (m.to.x - m.from.x) * ef;
+      const z = m.from.z + (m.to.z - m.from.z) * ef;
+      const y = m.from.y + (m.upY - m.from.y) * eu + (m.to.y - m.upY) * ef;
+      this.body.setNextKinematicTranslation({ x, y: y + HALF_HEIGHT + RADIUS, z });
+      this.grounded = true;
+      if (m.t >= 1) this.mantle = null;
+      return;
+    }
+
     const speed = run ? RUN : WALK;
     // Horizontal velocity eases toward the wish so starts/stops read as weight.
-    const targetX = wish.x * speed;
-    const targetZ = wish.z * speed;
     const k = Math.min(1, ACCEL * dt / speed);
-    this.velocity.x += (targetX - this.velocity.x) * k;
-    this.velocity.z += (targetZ - this.velocity.z) * k;
+    this.velocity.x += (wish.x * speed - this.velocity.x) * k;
+    this.velocity.z += (wish.z * speed - this.velocity.z) * k;
 
     this.sinceGrounded = this.grounded ? 0 : this.sinceGrounded + dt;
     if (jump && this.sinceGrounded < COYOTE && this.vy <= 0.01) {
@@ -76,13 +167,27 @@ export class PlayerController {
     const desired = { x: this.velocity.x * dt, y: this.vy * dt, z: this.velocity.z * dt };
     this.cc.computeColliderMovement(this.collider, desired);
     const m = this.cc.computedMovement();
+    const wasGrounded = this.grounded;
     this.grounded = this.cc.computedGrounded();
     const t = this.body.translation();
     this.body.setNextKinematicTranslation({ x: t.x + m.x, y: t.y + m.y, z: t.z + m.z });
     if (this.grounded && this.vy < 0) this.vy = 0;
-    // Ceiling bump: if we asked to rise and were stopped, kill upward speed.
     if (desired.y > 0.001 && m.y < desired.y * 0.5) this.vy = Math.min(this.vy, 0);
     this.velocity.y = this.vy;
+
+    // ── Ledge grab ────────────────────────────────────────────────────
+    // Pushing into something that stopped us (on the ground or in the air,
+    // rising slowly or falling): look for a ledge to mantle onto.
+    const pushing = wish.lengthSq() > 0.09;
+    const wantedH = Math.hypot(desired.x, desired.z);
+    const gotH = Math.hypot(m.x, m.z);
+    const blocked = wantedH > 0.004 && gotH < wantedH * 0.4;
+    if (pushing && blocked && this.stamina >= MANTLE_COST && (wasGrounded || this.vy < 4)) {
+      const f = this.tmp.copy(wish).setY(0).normalize();
+      const ledge = this.findLedge(f);
+      if (ledge) this.startMantle(ledge);
+    }
+    if (this.grounded) this.stamina = Math.min(100, this.stamina + STAMINA_REGEN * dt);
   }
 
   /** After world.step(): read back the settled position. */
@@ -91,6 +196,7 @@ export class PlayerController {
   }
 
   teleport(p: THREE.Vector3): void {
+    this.mantle = null;
     this.body.setTranslation({ x: p.x, y: p.y + HALF_HEIGHT + RADIUS, z: p.z }, true);
     this.body.setNextKinematicTranslation({ x: p.x, y: p.y + HALF_HEIGHT + RADIUS, z: p.z });
     this.vy = 0;

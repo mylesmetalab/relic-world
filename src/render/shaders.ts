@@ -45,7 +45,25 @@ void main() {
 `;
 
 export const TOON_FRAGMENT = /* glsl */ `
-uniform vec3 uLightPos;
+// Up to 4 torches. Tone is the brightest torch's N·L, attenuated to zero at
+// that torch's reach — beyond every torch the rock is UNPRINTED (paper).
+uniform vec3 uLights[4];
+uniform float uLightReach[4];
+uniform int uLightCount;
+// Where the player's light has BEEN: a world-space R8 map (rect = x0, z0,
+// size, enabled). Once inked, rock stays inked.
+uniform sampler2D uInkMap;
+uniform vec4 uInkMapRect;
+uniform vec3 uPaper;
+// Biomes: N cave ramps stacked as rows of one texture, a pen per row, and a
+// world-space region field (same noise as world/biomes.ts) with HARD edges.
+uniform sampler2D uBiomeRamps;
+uniform float uBiomeCount;
+uniform float uBiomeScale;
+uniform float uBiomeSeed;
+uniform float uUseBiomes;
+uniform vec4 uPenA[8]; // hatchRange, black, pitchScale, nib
+uniform vec4 uPenB[8]; // cracks, stipple, hatchRot, formFollow
 uniform vec3 uAmbientColor;
 uniform vec3 uInk;
 uniform sampler2D uPaletteTex;
@@ -132,6 +150,13 @@ float vnoise(vec2 p) {
   return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
              mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
 }
+// Region id at a world xz — mirrors biomeField() in world/biomes.ts.
+int biomeId(vec2 xz) {
+  vec2 p = xz / uBiomeScale + vec2(uBiomeSeed * 0.37, uBiomeSeed * 0.11);
+  float n = vnoise(p) * 0.7 + vnoise(p * 2.3 + vec2(5.1, 1.7)) * 0.3;
+  n = clamp((n - 0.5) * 2.2 + 0.5, 0.0, 0.999);
+  return int(min(uBiomeCount - 1.0, floor(n * uBiomeCount)));
+}
 
 // A ruled family: lines every uPitch print px, measured along direction d.
 float ruleDir(vec2 p, vec2 d, float freq, float w) {
@@ -160,12 +185,34 @@ float contourStrokes(vec2 fc, vec2 dir, float density, float weight, float seed)
 
 void main() {
   vec3 N = normalize(vNormalW);
-  vec3 L = normalize(uLightPos - vPosW);
   vec3 V = normalize(cameraPosition - vPosW);
 
+  // ── Biome pen (rock only) ─────────────────────────────────────────
+  int bi = uUseBiomes > 0.5 ? biomeId(vPosW.xz) : 0;
+  float hatchRange = uUseBiomes > 0.5 ? uPenA[bi].x : uHatchRange;
+  float blackCut   = uUseBiomes > 0.5 ? uPenA[bi].y : uBlack;
+  float pitchScale = uUseBiomes > 0.5 ? uPenA[bi].z : uPitchScale;
+  float nib        = uUseBiomes > 0.5 ? uPenA[bi].w : uNib;
+  float cracks     = uUseBiomes > 0.5 ? uPenB[bi].x : uCracks;
+  float stipple    = uUseBiomes > 0.5 ? uPenB[bi].y : uStipple;
+  float hatchRot   = uUseBiomes > 0.5 ? uPenB[bi].z : uHatchRot;
+  float formFollow = uUseBiomes > 0.5 ? uPenB[bi].w : uFormFollow;
+
   // ── Tone: a scalar the inks are chosen from, never applied as shade ──
-  float tone = pow(max(dot(N, L), 0.0), uShadowGamma);
-  tone = max(tone, max(dot(N, normalize(uFillDir)), 0.0) * uFill);
+  // The brightest torch wins; each fades to nothing at its reach.
+  float tone = 0.0;
+  float lit = 0.0;
+  for (int i = 0; i < 4; i++) {
+    if (i >= uLightCount) break;
+    vec3 toL = uLights[i] - vPosW;
+    float dist = length(toL);
+    float reach = uLightReach[i];
+    float att = reach > 0.0 ? 1.0 - smoothstep(reach * 0.45, reach, dist) : 1.0;
+    float t = pow(max(dot(N, toL / max(dist, 1e-4)), 0.0), uShadowGamma) * att;
+    tone = max(tone, t);
+    lit = max(lit, att);
+  }
+  tone = max(tone, max(dot(N, normalize(uFillDir)), 0.0) * uFill * max(lit, step(uInkMapRect.w, 0.5)));
   tone += pow(1.0 - max(dot(N, V), 0.0), 2.5) * uRim;
   tone = clamp(tone, 0.0, 1.0);
   tone = mix(tone, uFogTone, smoothstep(uFogRange.x, uFogRange.y, vDepth) * uFog);
@@ -197,53 +244,73 @@ void main() {
   base /= 5.0;
   hi /= 5.0;
   vec3 zoneFill = tone > uHiCut ? hi : base;
-  vec3 bandFill = texture2D(uPaletteTex, vec2(uRampOffset + banded * uRampScale, 0.5)).rgb;
+  vec2 bandUv = vec2(uRampOffset + banded * uRampScale, 0.5);
+  vec3 bandFill = uUseBiomes > 0.5
+    ? texture2D(uBiomeRamps, vec2(bandUv.x, (float(bi) + 0.5) / uBiomeCount)).rgb
+    : texture2D(uPaletteTex, bandUv).rgb;
   vec3 fill = mix(zoneFill, bandFill, uColorMode);
   fill = mix(fill, fill * uAmbientColor * 1.4, 0.04);
 
   // ── Ink ─────────────────────────────────────────────────────────────
   float ink = 0.0;
-  float w = mix(0.06, 0.36, 1.0 - tone) * uNib;   // the nib widens as it darkens
+  float w = mix(0.06, 0.36, 1.0 - tone) * nib;   // the nib widens as it darkens
   // Surface tangent in screen space (perpendicular to the view normal) —
   // the direction a pen would follow around a cylinder or fold.
   vec3 nV = normalize((viewMatrix * vec4(N, 0.0)).xyz);
   vec2 tang = vec2(-nV.y, nV.x);
   float tl = length(tang);
-  float follow = uFormFollow * smoothstep(0.1, 0.45, tl);
-  float pitchPx = max(uPitch * uPitchScale * mix(1.0, uHeadPitch, step(uHeadFrom, hRaw)), 1.0);
+  float follow = formFollow * smoothstep(0.1, 0.45, tl);
+  float pitchPx = max(uPitch * pitchScale * mix(1.0, uHeadPitch, step(uHeadFrom, hRaw)), 1.0);
   if (uHatchStyle < 0.5) {
     vec2 sp = (fc - uHatchPhase) / pitchPx;
-    float a0 = 0.62 + uHatchRot + uHatchSeed;
+    float a0 = 0.62 + hatchRot + uHatchSeed;
     vec2 d0 = vec2(cos(a0), sin(a0));
     vec2 tdir = tang / max(tl, 1e-4);
     if (dot(tdir, d0) < 0.0) tdir = -tdir;          // keep the blend from cancelling
     vec2 d1 = normalize(mix(d0, tdir, follow));
-    if (tone < uHatchRange)        ink = max(ink, ruleDir(sp, d1, 1.0, w));
-    if (tone < uHatchRange * 0.65) ink = max(ink, ruleDir(sp, rot2(d1, -1.37), 1.0, w));
-    if (tone < uHatchRange * 0.35) ink = max(ink, ruleDir(sp, rot2(d1,  0.93), 1.3, w));
+    if (tone < hatchRange)        ink = max(ink, ruleDir(sp, d1, 1.0, w));
+    if (tone < hatchRange * 0.65) ink = max(ink, ruleDir(sp, rot2(d1, -1.37), 1.0, w));
+    if (tone < hatchRange * 0.35) ink = max(ink, ruleDir(sp, rot2(d1,  0.93), 1.3, w));
   } else {
-    vec2 fallback = vec2(cos(0.62 + uHatchRot + uHatchSeed), sin(0.62 + uHatchRot + uHatchSeed));
+    vec2 fallback = vec2(cos(0.62 + hatchRot + uHatchSeed), sin(0.62 + hatchRot + uHatchSeed));
     vec2 dir = normalize(mix(fallback, tang / max(tl, 1e-4), max(follow, 0.15 * smoothstep(0.1, 0.45, tl))));
-    float t = clamp((uHatchRange - tone) / max(uHatchRange - uBlack, 1e-3), 0.0, 1.0);
+    float t = clamp((hatchRange - tone) / max(hatchRange - blackCut, 1e-3), 0.0, 1.0);
     float density = 1.0 / pitchPx;
     vec2 fp = fc - uHatchPhase;
     ink = max(ink, contourStrokes(fp, dir, density, w * 1.6, 1.0) * smoothstep(0.0, 0.2, t));
     ink = max(ink, contourStrokes(fp, vec2(-dir.y, dir.x), density * 0.9, w * 1.3, 2.0) * smoothstep(0.55, 0.8, t));
   }
   // Stipple flecks just above the black fill.
-  float near = clamp((uHatchRange * 0.5 - tone) / max(uHatchRange * 0.5 - uBlack, 1e-3), 0.0, 1.0);
-  ink = max(ink, step(1.0 - uStipple * near * near * 0.6, hash21(floor(fc / 2.0))));
-  if (uCracks > 0.0) {
+  float near = clamp((hatchRange * 0.5 - tone) / max(hatchRange * 0.5 - blackCut, 1e-3), 0.0, 1.0);
+  ink = max(ink, step(1.0 - stipple * near * near * 0.6, hash21(floor(fc / 2.0))));
+  if (cracks > 0.0) {
     // Thin dark lines where a world-space noise field crosses its midline,
     // gated by a second field so they break into separate cracks.
     float cn = vnoise(vec2(vPosW.x * 2.3 + vPosW.z * 1.7, vPosW.y * 2.6) + 3.1);
     float ridge = abs(cn - 0.5);
     float gateC = step(0.38, vnoise(vec2(vPosW.z * 1.1 - vPosW.x * 0.6, vPosW.y * 0.9) + 9.0));
-    ink = max(ink, (1.0 - smoothstep(0.0, 0.016, ridge)) * gateC * step(0.5, uCracks + 0.5 - 0.5 * step(tone, uHiCut) * 0.0) * uCracks);
+    ink = max(ink, (1.0 - smoothstep(0.0, 0.016, ridge)) * gateC * cracks);
   }
-  if (tone < uBlack) ink = 1.0;
+  if (tone < blackCut) ink = 1.0;
 
-  gl_FragColor = vec4(mix(fill, uInk, ink), 1.0);
+  vec3 col = mix(fill, uInk, ink);
+
+  // ── Unprinted until lit ──────────────────────────────────────────
+  // Where no torch reaches AND the ink map has never been inked, the page is
+  // bare paper: no fill, no ink. The map remembers; the reveal is the print
+  // arriving under your light.
+  if (uInkMapRect.w > 0.5) {
+    vec2 muv = (vPosW.xz - uInkMapRect.xy) / uInkMapRect.z;
+    float inked = (muv.x >= 0.0 && muv.x <= 1.0 && muv.y >= 0.0 && muv.y <= 1.0)
+      ? texture2D(uInkMap, muv).r : 0.0;
+    float printed = smoothstep(0.08, 0.5, max(inked, lit));
+    // Bare paper carries a faint pencil under-drawing of the tone so the
+    // form reads before the ink lands.
+    vec3 pencil = mix(uPaper, uPaper * 0.82, step(tone, blackCut) * 0.6);
+    col = mix(pencil, col, printed);
+  }
+
+  gl_FragColor = vec4(col, 1.0);
 }
 `;
 
@@ -420,6 +487,17 @@ void main() {
 
 export const VAULT_FRAGMENT = /* glsl */ `
 uniform sampler2D uPaletteTex;
+uniform sampler2D uBiomeRamps;
+uniform float uBiomeCount;
+uniform float uBiomeScale;
+uniform float uBiomeSeed;
+uniform float uUseBiomes;
+uniform vec3 uLights[4];
+uniform float uLightReach[4];
+uniform int uLightCount;
+uniform sampler2D uInkMap;
+uniform vec4 uInkMapRect;
+uniform vec3 uPaper;
 // The slice of the ramp the vault draws from (the blue upper range).
 uniform float uRampLo;
 uniform float uRampHi;
@@ -435,6 +513,21 @@ varying vec3 vPosE;
 
 float vhash(vec3 p) {
   return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
+}
+float hash21(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+float vnoise2(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+             mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+int biomeId(vec2 xz) {
+  vec2 p = xz / uBiomeScale + vec2(uBiomeSeed * 0.37, uBiomeSeed * 0.11);
+  float n = vnoise2(p) * 0.7 + vnoise2(p * 2.3 + vec2(5.1, 1.7)) * 0.3;
+  n = clamp((n - 0.5) * 2.2 + 0.5, 0.0, 0.999);
+  return int(min(uBiomeCount - 1.0, floor(n * uBiomeCount)));
 }
 // Cheap trilinear value noise — enough for brushy ink variation.
 float vnoise(vec3 p) {
@@ -465,7 +558,10 @@ void main() {
   float n = vnoise(p) * 0.65 + vnoise(p * 2.7 + 13.1) * 0.35;
   float h = clamp(vHeight + (n - 0.5) * 0.45, 0.0, 1.0);
   h = floor(h * 3.0) / 2.0;
-  vec3 col = texture2D(uPaletteTex, vec2(mix(uRampLo, uRampHi, h), 0.5)).rgb;
+  float rx = mix(uRampLo, uRampHi, h);
+  vec3 col = uUseBiomes > 0.5
+    ? texture2D(uBiomeRamps, vec2(rx, (float(biomeId(vPosE.xz)) + 0.5) / uBiomeCount)).rgb
+    : texture2D(uPaletteTex, vec2(rx, 0.5)).rgb;
 
   // Concentric BLACK brush arcs around the tunnel axis — the reference's
   // cave ceiling is drawn as rings of broken ink strokes receding into the
@@ -486,6 +582,22 @@ void main() {
   float fray = step(0.32, vnoise(vec3(ang * 14.0, r * 4.0, vPosE.z * 0.7) + 19.0 + s));
   float ink = stroke * gate * fray;
   col = mix(col, vec3(0.02, 0.012, 0.03), ink);
+
+  if (uInkMapRect.w > 0.5) {
+    float lit = 0.0;
+    for (int i = 0; i < 4; i++) {
+      if (i >= uLightCount) break;
+      float reach = uLightReach[i];
+      // The ceiling is far overhead; judge reach on the horizontal only.
+      float dist = length(uLights[i].xz - vPosE.xz);
+      lit = max(lit, 1.0 - smoothstep(reach * 0.5, reach * 1.1, dist));
+    }
+    vec2 muv = (vPosE.xz - uInkMapRect.xy) / uInkMapRect.z;
+    float inked = (muv.x >= 0.0 && muv.x <= 1.0 && muv.y >= 0.0 && muv.y <= 1.0)
+      ? texture2D(uInkMap, muv).r : 0.0;
+    float printed = smoothstep(0.08, 0.5, max(inked, lit));
+    col = mix(uPaper, col, printed);
+  }
 
   gl_FragColor = vec4(col, 1.0);
 }

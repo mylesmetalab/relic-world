@@ -62,6 +62,17 @@ heightfield per chunk is therefore the entire collision surface for terrain.
 - ND pass: `scene.overrideMaterial = ndMat`; back-side ceiling geometry is
   absent from it (cleared to depth 1), so it never gets key-plate creases.
 
+## Status (2026-09-09)
+
+- M1 done. M2 (biomes, torches with reach), M3 (ledge grab + mantle),
+  multiplayer and photo mode shipped in the second pass — see README for the
+  rules of the place. Deliberately not done yet: M4 props/physics, M5 rigged
+  body, sound, touch controls.
+- Multiplayer is serverless (trystero over WebRTC, Nostr relays for the
+  handshake). Metalab Sites' CSP (`connect-src 'self'`) blocks the relays,
+  so a hosted build needs a static host without that policy — GitHub Pages
+  is the intended one (`.github/workflows/pages.yml`).
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

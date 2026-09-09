@@ -1,12 +1,15 @@
 import * as THREE from "three";
 import { Simplex2, clamp, lerp, mulberry32, smoothstep } from "./noise";
+import { BIOMES, biomeAt, biomeIdAt, type Biome } from "./biomes";
 
 /**
  * The cave as two height fields. `floor(x,z)` is the walkable surface and the
  * ONLY terrain collider; `ceiling(x,z)` is the unlit roof. Where a third
  * field (solidity) says "rock", the floor is lifted up to the ceiling — that
  * pinch is a wall or a pillar, and it falls out of the same mesh + collider
- * as the ground. One seed drives every field.
+ * as the ground. Biomes (hard-edged regions) scale the relief, terrace the
+ * floor into climbable ledges, and set the rock scatter. One seed drives
+ * every field.
  */
 
 export const CHUNK = 24; // metres per chunk
@@ -31,13 +34,26 @@ export class Terrain {
     this.solid = new Simplex2(seed * 7 + 5);
   }
 
-  /** Rolling cave floor before walls: gentle dunes plus rocky chop. */
+  biome(x: number, z: number): Biome {
+    return biomeAt(x, z, this.seed);
+  }
+  biomeId(x: number, z: number): number {
+    return biomeIdAt(x, z, this.seed);
+  }
+
+  /** Rolling cave floor before walls: dunes plus rocky chop, terraced in
+   *  biomes that want ledges. The spawn pad is flat and always Dungeon-relief. */
   floorOpen(x: number, z: number): number {
-    const broad = this.floorLo.fbm(x / 26, z / 26, 4) * 2.4;
-    const chop = this.floorHi.fbm(x / 5.5, z / 5.5, 2) * 0.55;
+    const b = this.biome(x, z);
     const d = Math.hypot(x, z);
-    // Flat pad under the spawn.
     const pad = smoothstep(2.5, 9, d);
+    const broad = this.floorLo.fbm(x / 26, z / 26, 4) * 2.4 * b.relief;
+    const chop = this.floorHi.fbm(x / 5.5, z / 5.5, 2) * 0.55;
+    if (b.terrace > 0) {
+      // Steps with a slightly rough tread; the risers are what you climb.
+      const stepped = Math.round(broad / b.terrace) * b.terrace;
+      return FLOOR_BASE + (stepped + chop * 0.35) * pad;
+    }
     return FLOOR_BASE + (broad + chop) * pad;
   }
 
@@ -141,7 +157,7 @@ export type RockSpec = {
 };
 
 /** Deterministic low-poly jagged boulder (the tuner's). */
-function rockGeometry(rng: () => number, radius: number, height: number): THREE.BufferGeometry {
+export function rockGeometry(rng: () => number, radius: number, height: number): THREE.BufferGeometry {
   const sides = 5 + Math.floor(rng() * 3);
   const geo = new THREE.ConeGeometry(radius, height, sides, 2, false);
   const pos = geo.attributes.position as THREE.BufferAttribute;
@@ -159,18 +175,20 @@ function rockGeometry(rng: () => number, radius: number, height: number): THREE.
   return geo;
 }
 
-/** Scatter boulders and stalagmites over a chunk, seated on the floor,
- *  avoiding walls and the spawn pad. Deterministic per chunk. */
+/** Scatter boulders and stalagmites over a chunk per its biome, seated on
+ *  the floor, avoiding walls and the spawn pad. Deterministic per chunk. */
 export function scatterRocks(terrain: Terrain, cx: number, cz: number, chunkSeed: number): RockSpec[] {
   const rng = mulberry32(chunkSeed);
   const out: RockSpec[] = [];
-  const count = 8 + Math.floor(rng() * 8);
+  const centre = terrain.biome(cx * CHUNK + CHUNK / 2, cz * CHUNK + CHUNK / 2);
+  const count = Math.round(centre.rocks * (0.7 + rng() * 0.6));
   for (let i = 0; i < count; i++) {
     const x = cx * CHUNK + rng() * CHUNK;
     const z = cz * CHUNK + rng() * CHUNK;
     if (Math.hypot(x, z) < 4) continue;
     if (!terrain.isOpen(x, z)) continue;
-    const tall = rng() < 0.25;
+    const b = terrain.biome(x, z);
+    const tall = rng() < b.tallShare;
     const radius = tall ? 0.25 + rng() * 0.5 : 0.35 + rng() * 1.1;
     const height = tall ? 1.8 + rng() * 3.2 : 0.35 + rng() * 1.4;
     const geometry = rockGeometry(rng, radius, height);
@@ -187,4 +205,4 @@ export function scatterRocks(terrain: Terrain, cx: number, cz: number, chunkSeed
   return out;
 }
 
-export { clamp };
+export { clamp, BIOMES };

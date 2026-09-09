@@ -9,14 +9,28 @@
       canvas#view { display: block; width: 100vw; height: 100vh; }
       #hud { position: fixed; left: 12px; bottom: 12px; color: #e8e4d0; font: 12px/1.5 ui-monospace, Menlo, monospace; opacity: 0.85; pointer-events: none; text-shadow: 0 1px 0 #000; }
       #hud b { color: #f2f542; }
-      #hint { position: fixed; inset: 0; display: grid; place-items: center; color: #e8e4d0; font: 16px ui-monospace, Menlo, monospace; background: rgba(10,10,18,0.55); cursor: pointer; }
+      #hud .peer { color: #46e0c8; }
+      #stamina { position: fixed; left: 12px; bottom: 74px; width: 120px; height: 8px; border: 1px solid #e8e4d0; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+      #stamina.show { opacity: 0.9; }
+      #stamina i { display: block; height: 100%; background: repeating-linear-gradient(-45deg, #f2f542 0 2px, transparent 2px 4px); }
+      #hint { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: #e8e4d0; font: 15px/1.7 ui-monospace, Menlo, monospace; background: rgba(10,10,18,0.55); cursor: pointer; }
       #hint.hidden { display: none; }
+      #photo { position: fixed; right: 12px; top: 12px; width: 240px; padding: 12px 14px; background: rgba(10,10,18,0.86); border: 1px solid rgba(232,228,208,0.35); color: #e8e4d0; font: 12px/1.6 ui-monospace, Menlo, monospace; }
+      #photo h2 { margin: 0 0 8px; font-size: 13px; color: #f2f542; }
+      #photo h2 .k { float: right; color: #e8e4d0; opacity: 0.6; font-weight: normal; }
+      #photo label { display: block; margin: 6px 0; }
+      #photo input[type=range], #photo select { width: 100%; }
+      #photo button { width: 100%; margin-top: 8px; padding: 6px; background: #f2f542; color: #0a0a12; border: 0; font: inherit; font-weight: bold; cursor: pointer; }
+      #photo .status { display: block; margin-top: 6px; min-height: 1.6em; opacity: 0.8; }
+      #photo .hint { margin: 6px 0 0; opacity: 0.6; }
     </style>
   </head>
   <body>
     <canvas id="view"></canvas>
+    <div id="stamina"><i></i></div>
     <div id="hud"></div>
-    <div id="hint">click to enter · WASD move · Shift run · Space jump · mouse look · V camera · 1–8 cave inks · Q/E figure inks · R reseed</div>
+    <div id="photo" hidden></div>
+    <div id="hint">click to enter<br>WASD move · Shift run · Space jump · push into a ledge to climb<br>mouse look · V first / third person · C change character · Q/E inks<br>P photo mode · R new seed · T back to spawn<br><small>everyone on the same seed shares the cave</small></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
