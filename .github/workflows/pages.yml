@@ -1,6 +1,7 @@
 # Static deploy to GitHub Pages on every push to main. The game is a static
 # bundle; multiplayer needs no server (WebRTC, brokered over public Nostr
-# relays), so Pages is the whole hosting story.
+# relays), so Pages is the whole hosting story. pnpm's version comes from
+# package.json's `packageManager` field.
 name: pages
 on:
   push:
@@ -19,7 +20,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 22
