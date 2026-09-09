@@ -106,9 +106,12 @@ async function boot(): Promise<void> {
     const speed = Math.hypot(player.velocity.x, player.velocity.z);
     figure.update(player.position, wish, speed, dt);
     cam.update(player.position, dt, player.body);
-    // Carried torch: up and to the camera's left, a little ahead.
-    torchOffset.copy(rgt).multiplyScalar(-1.8).addScaledVector(fwd, 1.2);
-    p.torch.position.set(player.position.x + torchOffset.x, player.position.y + 3.2, player.position.z + torchOffset.z);
+    // The torch rides with the VIEWER, upper-left of the lens — the tuner's
+    // light: the side of everything that faces the camera takes the fill,
+    // the far side falls into hatch and black.
+    torchOffset.copy(rgt).multiplyScalar(-3.5).addScaledVector(fwd, -1);
+    p.torch.position.copy(p.camera.position).add(torchOffset);
+    p.torch.position.y += 2.2;
 
     renderFrame(p, dt);
     input.endFrame();

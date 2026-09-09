@@ -121,7 +121,7 @@ export function gridGeometry(grid: HeightGrid, cx: number, cz: number, up: boole
       const c: [number, number] = [ix + 1, iz + 1], d: [number, number] = [ix, iz + 1];
       const tris = flip ? [a, c, b, a, d, c] : [a, d, b, b, d, c];
       // Counter-clockwise seen from +y for the floor; reversed for the ceiling.
-      const order = up ? [0, 2, 1, 3, 5, 4] : [0, 1, 2, 3, 4, 5];
+      const order = up ? [0, 1, 2, 3, 4, 5] : [0, 2, 1, 3, 5, 4];
       for (const i of order) put(tris[i]![0], tris[i]![1]);
     }
   }

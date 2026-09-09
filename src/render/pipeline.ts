@@ -150,7 +150,9 @@ export function setCaveColorway(p: Pipeline, index: number): string {
 }
 
 export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pipeline {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance" });
+  // preserveDrawingBuffer so a harness (or a screenshot key) can read the
+  // canvas back after the frame; the cost is one buffer copy per frame.
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance", preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(INK_BLACK, 1);
   renderer.toneMapping = THREE.NoToneMapping;
@@ -174,7 +176,7 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pip
     bands: 4, rampScale: 1, shadowGamma: 1.0, colorMode: 0, rim: 0.4, fog: 0, fogTone: 0, brk: 0, pitchScale: 1, cracks: 0, fill: 0.3,
   });
   const rockMat = makeToonMaterial(bgPaletteTex, bgPaletteTex, {
-    bands: 3, rampScale: ROCK_RAMP_SCALE, shadowGamma: 0.85, colorMode: 1, rim: 0, fog: 0.55, fogTone: 0.35, brk: 0.3, pitchScale: 1.3, cracks: 0.55, fill: 0,
+    bands: 3, rampScale: ROCK_RAMP_SCALE, shadowGamma: 1.25, colorMode: 1, rim: 0, fog: 0.5, fogTone: 0.4, brk: 0.3, pitchScale: 1.3, cracks: 0.55, fill: 0,
   });
   rockMat.uniforms.uHatchRange.value = 0.55;
   rockMat.uniforms.uBlack.value = 0.3;
