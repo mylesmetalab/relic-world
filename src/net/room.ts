@@ -43,7 +43,9 @@ export class Net {
   onLeave: ((id: string) => void) | null = null;
   private readonly room;
   private readonly state;
-  private latest: PeerState | null = null;
+  /** Pulled on every heartbeat, so a tab that has never rendered a frame
+   *  (opened in the background) still announces itself. */
+  private source: (() => PeerState | null) | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   /** Count of relay join errors (informational — one relay failing is normal). */
   relayErrors = 0;
@@ -77,13 +79,14 @@ export class Net {
     this.timer = setInterval(() => this.tick(), 1000 / 12);
   }
 
-  /** Record the latest local state; the timer sends it. */
-  update(mine: PeerState): void {
-    this.latest = mine;
+  /** Provide the local state; the heartbeat timer reads it. */
+  setSource(source: () => PeerState | null): void {
+    this.source = source;
   }
 
   private tick(): void {
-    if (this.latest) void this.state.send(this.latest).catch(() => {});
+    const mine = this.source?.();
+    if (mine) void this.state.send(mine).catch(() => {});
     // Drop peers we haven't heard from in a while (tab closed without leave).
     const now = performance.now();
     for (const [id, peer] of this.peers) {

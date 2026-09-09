@@ -8,7 +8,7 @@ import { Input } from "./player/input";
 import { PlayerController } from "./player/controller";
 import { PlayerCamera } from "./player/camera";
 import { CHARACTERS, Figure, type CharacterId } from "./player/figure";
-import { Net, type PeerState } from "./net/room";
+import { Net } from "./net/room";
 import { PhotoMode } from "./ui/photo";
 
 const canvas = document.getElementById("view") as HTMLCanvasElement;
@@ -68,6 +68,7 @@ async function boot(): Promise<void> {
   await figure.load(CHARACTERS[charIndex]!.id, 1.7);
   figure.setColorway(Number(localStorage.getItem("relic-world:ink") ?? 0));
 
+  const torchPos = new THREE.Vector3(0, 5, 0);
   const net = new Net(seed, roomOverride);
   const remotes = new Map<string, Remote>();
   net.onJoin = (id) => {
@@ -82,6 +83,16 @@ async function boot(): Promise<void> {
     remotes.delete(id);
   };
   window.addEventListener("beforeunload", () => net.leave());
+  // Read by the heartbeat timer, independent of the frame loop.
+  net.setSource(() => ({
+    p: [player.position.x, player.position.y, player.position.z],
+    f: figure.group.rotation.y,
+    t: [torchPos.x, torchPos.y, torchPos.z],
+    c: figure.character,
+    i: figure.colorway,
+    s: lastSpeed,
+    n: net.name,
+  }));
 
   const photo = new PhotoMode(p, ph, canvas, figure, () => input.requestLock());
 
@@ -97,7 +108,7 @@ async function boot(): Promise<void> {
   const wish = new THREE.Vector3();
   const fwd = new THREE.Vector3();
   const rgt = new THREE.Vector3();
-  const torchPos = new THREE.Vector3();
+  let lastSpeed = 0;
   const tmp = new THREE.Vector3();
   let acc = 0;
   let last = performance.now();
@@ -199,16 +210,7 @@ async function boot(): Promise<void> {
       if (p.torches.length < 4) p.torches.push({ position: r.torch, reach: REMOTE_REACH });
       p.inkMap.stamp(r.pos.x, r.pos.z, INK_STAMP * 0.7);
     }
-    const mine: PeerState = {
-      p: [player.position.x, player.position.y, player.position.z],
-      f: figure.group.rotation.y,
-      t: [torchPos.x, torchPos.y, torchPos.z],
-      c: figure.character,
-      i: figure.colorway,
-      s: speed,
-      n: net.name,
-    };
-    net.update(mine);
+    lastSpeed = speed;
 
     renderFrame(p, dt);
     input.endFrame();
