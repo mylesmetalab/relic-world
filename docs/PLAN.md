@@ -47,9 +47,12 @@ seed is the same place on every machine.
 ### Coordinates and units
 
 Metres. Player capsule radius 0.35, height 1.7. Chunk 24 m, 1 m cells.
-Floor height ∈ [0, ~6]; ceiling ∈ [7, 16]. Where `ceiling − floor` would be
-under ~2.5 m the floor is lifted to the ceiling: that IS the wall. One
-heightfield per chunk is therefore the entire collision surface for terrain.
+Lower floor ∈ [0, ~6]; lower ceiling ∈ [7, 16] (+24 in Cathedral); gallery
+slab 1.8 m above that ceiling where the gallery field says so; surface =
+topmost ceiling + `world.crust` (6 m) + hills. Where `ceiling − floor` would
+be under ~2.5 m the floor is lifted to the ceiling: that IS the wall. One
+heightfield per chunk PER LEVEL is the entire collision surface for terrain;
+digging is a per-vertex depth map per level.
 
 ### Rendering rules carried over
 
@@ -82,6 +85,18 @@ source the terrain, pipeline and main read; opt-in proximity voice over the
 same WebRTC connections; world-anchored mottle. Next: stacked caves and
 hatched-wall climbing, torch shrines, two-torch doors, relics → colorways,
 comic-panel photo mode, deeper-is-stranger, STL drop-in.
+
+### Fifth pass (2026-09-09, night)
+Surface start under a paper sky (`Terrain.surface`, a tunable `world.crust`
+of rock over the topmost cave); three stacked heightfield levels (surface /
+gallery / lower cave) with dig-through judged by the real rock thickness
+under a vertex; Cathedral biome (vaulted lower cave); small cell-snapped
+digs with a white marker showing what the next click cuts, tunnels at your
+feet and mantle-able steps when you aim up a wall; dig tunables in the
+panel; Gang Beasts carrying (F on a player, click throws, verified across
+two tabs); jump latch; ink chips + pick sound; touch controls + installable
+web-app shell (manifest, icons, iOS meta). Everything after this lives in
+`docs/BACKLOG.md` as self-contained briefs — arms first.
 
 ## Milestones
 
