@@ -1,5 +1,6 @@
 import { joinRoom, selfId } from "trystero";
 import type { CharacterId } from "../player/figure";
+import type { PropState } from "../world/props";
 
 /**
  * Multiplayer without a server. trystero pairs browsers over WebRTC using
@@ -45,6 +46,8 @@ export class Net {
   onLeave: ((id: string) => void) | null = null;
   private readonly room;
   private readonly state;
+  private readonly props;
+  onProps: ((states: PropState[], peerId: string) => void) | null = null;
   /** Pulled on every heartbeat, so a tab that has never rendered a frame
    *  (opened in the background) still announces itself. */
   private source: (() => PeerState | null) | null = null;
@@ -72,6 +75,8 @@ export class Net {
         this.onJoin?.(id);
       }
     };
+    this.props = this.room.makeAction<PropState[]>("props");
+    this.props.onMessage = (data, ctx) => this.onProps?.(data, ctx.peerId);
     this.room.onPeerLeave = (id) => {
       if (this.peers.delete(id)) this.onLeave?.(id);
     };
@@ -97,6 +102,10 @@ export class Net {
         this.onLeave?.(id);
       }
     }
+  }
+
+  sendProps(states: PropState[]): void {
+    if (states.length && this.peers.size) void this.props.send(states).catch(() => {});
   }
 
   get count(): number {

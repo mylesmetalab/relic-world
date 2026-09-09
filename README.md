@@ -21,10 +21,11 @@ Click to take the mouse.
 | push into a ledge | climb — a mantle up to about head height; costs stamina, which refills on the ground |
 | **mouse** | look |
 | **V** | first ↔ third person |
-| **C** / **⇧C** | change character (Bast, Rook, Cam, and three rock golems: Cairn, Shard, Menhir) |
+| **C** / **⇧C** | change character — Bast, Rook, Cam, and nine things the cave grew: Cairn, Shard, Menhir, Spire, Dolmen, Castle, Totem, Wisp, Hound |
 | **Q / E** | your figure's ink colorway |
 | **Enter** | chat — what you type streams above your figure as you type; Enter sends, Esc cancels |
 | **P** | photo mode — orbit, press controls, PNG export at print sizes |
+| **M** | mute |
 | **R** / **T** | new seed · back to spawn |
 
 `?seed=123` opens a specific world. **Everyone who opens the same seed is in
@@ -40,9 +41,14 @@ prints the rock for you too. `?room=name` joins a named room instead.
   and its own pen — hatch pitch, nib, black fill, cracks, stipple — and its
   own ground: Glacier and Void Peaks are terraced into climbable ledges,
   Sulphur Pit is a stalagmite forest, Deep Sea is flat and wide.
-- **Things can be pushed.** Rock shards and gold-leaf relic statues on
-  plinths are dynamic bodies; walk into them and they slide and topple.
-  Physics is local to each player for now.
+- **Things can be pushed, together.** Rock shards and gold-leaf relic
+  statues on plinths are dynamic bodies at rock density; walk into them and
+  they slide and topple. The nearest player simulates a prop and everyone
+  else follows, so a shove is shared.
+- **It sounds like paper and rock.** Everything is synthesized: a cave
+  drone, footfalls, jump and land, knocks scaled by impact, a press roller
+  that hums while new rock prints under your torch, and a blip when someone
+  starts talking.
 - **Tone picks the ink.** Lighting never shades a colour; it decides which
   flat ink lands. That is the whole style, and it is why a moving camera
   costs nothing.

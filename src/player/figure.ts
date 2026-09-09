@@ -1,9 +1,8 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { anchorHatch, disposeFigureMaterial, makeFigureMaterial, setFigureColorway, type Pipeline } from "../render/pipeline";
-import { mulberry32 } from "../world/noise";
-import { rockGeometry } from "../world/terrain";
 import { loadPacked, type PackedId } from "../world/models";
+import { buildGolem, GOLEM_MOTION, type GolemKind } from "./golems";
 
 /**
  * A figure — the player's body, or another player's. Two kinds:
@@ -19,46 +18,27 @@ export const CHARACTERS = [
   { id: "bast", name: "Bast" },
   { id: "rook", name: "Rook" },
   { id: "cam", name: "Cam" },
-  { id: "golem-1", name: "Cairn" },
-  { id: "golem-2", name: "Shard" },
-  { id: "golem-3", name: "Menhir" },
+  { id: "golem-cairn", name: "Cairn" },
+  { id: "golem-shard", name: "Shard" },
+  { id: "golem-menhir", name: "Menhir" },
+  { id: "golem-spire", name: "Spire" },
+  { id: "golem-dolmen", name: "Dolmen" },
+  { id: "golem-castle", name: "Castle" },
+  { id: "golem-totem", name: "Totem" },
+  { id: "golem-wisp", name: "Wisp" },
+  { id: "golem-hound", name: "Hound" },
 ] as const;
 export type CharacterId = (typeof CHARACTERS)[number]["id"];
 
+/** Old saves / old builds used golem-1..3. */
+export function normaliseCharacter(id: string): CharacterId {
+  const legacy: Record<string, CharacterId> = { "golem-1": "golem-cairn", "golem-2": "golem-shard", "golem-3": "golem-menhir" };
+  if (legacy[id]) return legacy[id]!;
+  return (CHARACTERS.some((c) => c.id === id) ? id : "bast") as CharacterId;
+}
+
 /** Yaw (radians) that turns each packed figure to face +z in its own frame. */
 export const FACING: Record<string, number> = { bast: (95 * Math.PI) / 180, rook: (72 * Math.PI) / 180, cam: Math.PI / 2 };
-
-function buildGolem(seed: number): THREE.BufferGeometry {
-  const rng = mulberry32(seed);
-  const parts: THREE.BufferGeometry[] = [];
-  let y = 0;
-  const segments = 4 + Math.floor(rng() * 2);
-  for (let i = 0; i < segments; i++) {
-    const t = i / (segments - 1);
-    const radius = (0.34 - t * 0.16) * (0.85 + rng() * 0.3);
-    const height = 0.32 + rng() * 0.22;
-    const g = rockGeometry(rng, radius, height);
-    g.rotateY(rng() * Math.PI * 2);
-    g.rotateZ((rng() - 0.5) * 0.25);
-    g.translate((rng() - 0.5) * 0.08, y + height / 2, (rng() - 0.5) * 0.08);
-    parts.push(g);
-    y += height * 0.82;
-  }
-  for (const side of [-1, 1]) {
-    const g = rockGeometry(rng, 0.14 + rng() * 0.08, 0.55 + rng() * 0.3);
-    g.rotateZ(side * (0.9 + rng() * 0.4));
-    g.translate(side * 0.34, y * 0.7, 0);
-    parts.push(g);
-  }
-  const head = rockGeometry(rng, 0.12 + rng() * 0.06, 0.3 + rng() * 0.15);
-  head.rotateZ((rng() - 0.5) * 0.5);
-  head.translate(0, y + 0.1, 0);
-  parts.push(head);
-  const merged = mergeGeometries(parts.map((g) => g.toNonIndexed()), false)!;
-  for (const g of parts) g.dispose();
-  merged.computeVertexNormals();
-  return merged;
-}
 
 export class Figure {
   readonly group = new THREE.Group();
@@ -66,6 +46,9 @@ export class Figure {
   readonly material: THREE.ShaderMaterial;
   private facing = 0;
   private bob = 0;
+  private motion = { bob: 0.06, lean: 0.035, float: 0 };
+  /** Fired on each footfall while walking (audio hook). */
+  onStep: (() => void) | null = null;
   /** Only golem geometry is owned; packed geometry is shared via models.ts. */
   private ownedGeometry: THREE.BufferGeometry | null = null;
   hull: THREE.Mesh | null = null;
@@ -94,13 +77,18 @@ export class Figure {
     let cutMin: number;
     let full: THREE.Box3;
     let owned: THREE.BufferGeometry | null = null;
-    if (id.startsWith("golem")) {
-      geometry = buildGolem(Number(id.split("-")[1]) * 977 + 13);
+    if (id.startsWith("golem-")) {
+      const kind = id.slice(6) as GolemKind;
+      let h = 13;
+      for (const ch of kind) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      geometry = buildGolem(kind, h);
       geometry.computeBoundingBox();
       full = geometry.boundingBox!.clone();
       cutMin = full.min.y;
       owned = geometry;
+      this.motion = GOLEM_MOTION[kind];
     } else {
+      this.motion = { bob: 0.06, lean: 0.035, float: 0 };
       const m = await loadPacked(id as PackedId);
       if (this.character !== id) return; // superseded while loading
       geometry = m.geometry;
@@ -138,11 +126,14 @@ export class Figure {
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.facing += d * Math.min(1, dt * 10);
     }
+    const prevPhase = Math.floor(this.bob / Math.PI);
     this.bob += speed * dt * 2.2;
-    const lift = speed > 0.3 ? Math.abs(Math.sin(this.bob)) * 0.06 : 0;
+    if (speed > 0.3 && Math.floor(this.bob / Math.PI) !== prevPhase) this.onStep?.();
+    const m = this.motion;
+    const lift = (speed > 0.3 ? Math.abs(Math.sin(this.bob)) * m.bob : 0) + m.float * (0.6 + 0.4 * Math.sin(this.bob * 0.35 + performance.now() * 0.0012));
     this.group.position.set(feet.x, feet.y + lift, feet.z);
     this.group.rotation.y = this.facing;
-    this.inner.rotation.z = speed > 0.3 ? Math.sin(this.bob) * 0.035 : 0;
+    this.inner.rotation.z = speed > 0.3 ? Math.sin(this.bob) * m.lean : 0;
   }
 
   /** Direct placement (remote players: interpolated elsewhere). */

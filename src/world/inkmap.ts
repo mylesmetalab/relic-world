@@ -29,8 +29,10 @@ export class InkMap {
     return new THREE.Vector4(this.x0, this.z0, this.size, enabled ? 1 : 0);
   }
 
-  /** Ink a disc: full strength inside `reach * 0.45`, fading to nothing at `reach`. */
-  stamp(x: number, z: number, reach: number): void {
+  /** Ink a disc: full strength inside `reach * 0.45`, fading to nothing at
+   *  `reach`. Returns how many texels crossed into "printed" this call. */
+  stamp(x: number, z: number, reach: number): number {
+    let fresh = 0;
     const cx = x - this.x0;
     const cz = z - this.z0;
     const r = reach;
@@ -43,12 +45,15 @@ export class InkMap {
         if (d >= r) continue;
         const v = d <= inner ? 255 : Math.round(255 * (1 - (d - inner) / (r - inner)));
         const k = iz * this.size + ix;
-        if (v > this.data[k]!) {
+        const prev = this.data[k]!;
+        if (v > prev) {
           this.data[k] = v;
           this.dirty = true;
+          if (prev < 128 && v >= 128) fresh++;
         }
       }
     }
+    return fresh;
   }
 
   /** Upload if anything changed (call once per frame). */

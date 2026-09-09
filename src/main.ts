@@ -7,7 +7,8 @@ import { ChunkManager } from "./world/chunks";
 import { Input } from "./player/input";
 import { PlayerController } from "./player/controller";
 import { PlayerCamera } from "./player/camera";
-import { CHARACTERS, Figure, type CharacterId } from "./player/figure";
+import { CHARACTERS, Figure, normaliseCharacter, type CharacterId } from "./player/figure";
+import { Sound } from "./audio/sound";
 import { Net } from "./net/room";
 import { PhotoMode } from "./ui/photo";
 import { Chat } from "./ui/chat";
@@ -35,6 +36,7 @@ type Remote = {
   torch: THREE.Vector3;
   speed: number;
   loading: CharacterId | null;
+  talking: boolean;
 };
 
 async function boot(): Promise<void> {
@@ -65,7 +67,9 @@ async function boot(): Promise<void> {
   const player = new PlayerController(ph, spawn);
   const cam = new PlayerCamera(p.camera, ph);
   const figure = new Figure(p);
-  let charIndex = Math.max(0, CHARACTERS.findIndex((c) => c.id === (localStorage.getItem("relic-world:character") ?? "bast")));
+  let charIndex = Math.max(0, CHARACTERS.findIndex((c) => c.id === normaliseCharacter(localStorage.getItem("relic-world:character") ?? "bast")));
+  const sound = new Sound();
+  figure.onStep = () => sound.step(lastSpeed);
   await figure.load(CHARACTERS[charIndex]!.id, 1.7);
   figure.setColorway(Number(localStorage.getItem("relic-world:ink") ?? 0));
 
@@ -73,7 +77,7 @@ async function boot(): Promise<void> {
   const net = new Net(seed, roomOverride);
   const remotes = new Map<string, Remote>();
   net.onJoin = (id) => {
-    const r: Remote = { figure: new Figure(p), pos: new THREE.Vector3(), facing: 0, torch: new THREE.Vector3(), speed: 0, loading: null };
+    const r: Remote = { figure: new Figure(p), pos: new THREE.Vector3(), facing: 0, torch: new THREE.Vector3(), speed: 0, loading: null, talking: false };
     const st = net.peers.get(id)!.state;
     r.pos.set(...st.p);
     r.torch.set(...st.t);
@@ -84,6 +88,22 @@ async function boot(): Promise<void> {
     remotes.delete(id);
   };
   window.addEventListener("beforeunload", () => net.leave());
+
+  // Prop ownership: the nearest player simulates a prop and broadcasts it;
+  // everyone else follows. Ties go to the lower peer id. With the same seed
+  // every client spawned the same props, so ids line up.
+  const isOwner = (x: number, z: number): boolean => {
+    const mine = (player.position.x - x) ** 2 + (player.position.z - z) ** 2;
+    for (const [id, r] of remotes) {
+      const theirs = (r.pos.x - x) ** 2 + (r.pos.z - z) ** 2;
+      if (theirs < mine - 1e-6 || (Math.abs(theirs - mine) <= 1e-6 && id < net.selfId)) return false;
+    }
+    return true;
+  };
+  net.onProps = (states) => chunks.props.apply(states, isOwner);
+  chunks.props.onKnock = (impact) => sound.knock(impact);
+  let propSendT = 0;
+  let propSnapT = 0;
   // Read by the heartbeat timer, independent of the frame loop.
   net.setSource(() => ({
     p: [player.position.x, player.position.y, player.position.z],
@@ -103,6 +123,7 @@ async function boot(): Promise<void> {
   // browsers, iframes) refuse pointer lock, and drag-to-look covers them.
   const dismiss = () => {
     hint.classList.add("hidden");
+    sound.start();
     if (!photo.active) input.requestLock();
   };
   canvas.addEventListener("click", dismiss);
@@ -173,19 +194,35 @@ async function boot(): Promise<void> {
     if (wish.lengthSq() > 1) wish.normalize();
     const run = input.down.has("ShiftLeft") || input.down.has("ShiftRight");
     let jump = input.once("Space");
+    if (jump && player.grounded && !photo.active) sound.jump();
     if (!photo.active) {
       acc += dt;
       while (acc >= STEP) {
+        const wasGrounded = player.grounded;
+        const vyBefore = player.velocity.y;
         player.step(STEP, wish, run, jump);
         jump = false;
         ph.world.step();
         player.afterStep();
         acc -= STEP;
+        if (player.justMantled) sound.mantle();
+        if (!wasGrounded && player.grounded && vyBefore < -3) sound.land(vyBefore);
       }
     }
+    if (input.once("KeyM")) sound.toggleMute();
 
     chunks.update(player.position);
     chunks.props.update();
+    propSendT += dt;
+    propSnapT += dt;
+    if (propSnapT >= 3) {
+      propSnapT = 0;
+      propSendT = 0;
+      net.sendProps(chunks.props.collectOwned(isOwner, true));
+    } else if (propSendT >= 0.1) {
+      propSendT = 0;
+      net.sendProps(chunks.props.collectOwned(isOwner, false));
+    }
     const speed = photo.active ? 0 : Math.hypot(player.velocity.x, player.velocity.z);
     figure.update(player.position, wish, speed, photo.active ? 0 : dt);
     if (photo.active) photo.update(player.position, player.body);
@@ -197,7 +234,8 @@ async function boot(): Promise<void> {
     torchPos.y += 2.2;
     p.torches.length = 0;
     p.torches.push({ position: torchPos, reach: LOCAL_REACH });
-    p.inkMap.stamp(player.position.x, player.position.z, INK_STAMP);
+    const fresh = p.inkMap.stamp(player.position.x, player.position.z, INK_STAMP);
+    sound.print(fresh, dt);
 
     // ── Peers ────────────────────────────────────────────────────────
     const k = 1 - Math.exp(-dt * 10);
@@ -211,10 +249,13 @@ async function boot(): Promise<void> {
       r.facing += d * k;
       r.speed = st.s;
       r.figure.place(r.pos, r.facing);
-      if (r.figure.character !== st.c && r.loading !== st.c) {
-        r.loading = st.c;
-        void r.figure.load(st.c, 1.7).then(() => { r.loading = null; });
+      const wantChar = normaliseCharacter(st.c);
+      if (r.figure.character !== wantChar && r.loading !== wantChar) {
+        r.loading = wantChar;
+        void r.figure.load(wantChar, 1.7).then(() => { r.loading = null; });
       }
+      if ((st.b ?? "") && !r.talking) sound.blip();
+      r.talking = !!(st.b ?? "");
       if (r.figure.colorway !== st.i) r.figure.setColorway(st.i);
       if (p.torches.length < 4) p.torches.push({ position: r.torch, reach: REMOTE_REACH });
       p.inkMap.stamp(r.pos.x, r.pos.z, INK_STAMP * 0.7);
@@ -257,7 +298,7 @@ async function boot(): Promise<void> {
 
   // Debug handle for harness verification.
   (window as unknown as { __world: unknown }).__world = {
-    seed, player, cam, terrain, chunks, pipeline: p, figure, net, remotes, photo,
+    seed, player, cam, terrain, chunks, pipeline: p, figure, net, remotes, photo, sound, isOwner,
     setInk: (i: number) => figure.setColorway(i),
     setCharacter: (i: number) => { charIndex = i - 1; switchCharacter(1); },
     shot: () => canvas.toDataURL("image/jpeg", 0.8),
