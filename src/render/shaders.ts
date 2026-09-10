@@ -96,8 +96,14 @@ uniform float uBiomeCount;
 uniform float uBiomeScale;
 uniform float uBiomeSeed;
 uniform float uUseBiomes;
-uniform vec4 uPenA[8]; // hatchRange, black, pitchScale, nib
-uniform vec4 uPenB[8]; // cracks, stipple, hatchRot, formFollow
+// Sized to BIOMES.length (src/world/biomes.ts) -- keep in sync, GLSL array
+// sizes are compile-time. A biome index past the end of these read out of
+// bounds (undefined per spec; observed as silently repeating an earlier
+// biome's pen on real GPUs), so any newly added biome past this count would
+// quietly lose its own hatch/black/pitch/nib tuning until bumped.
+uniform vec4 uPenA[10]; // hatchRange, black, pitchScale, nib
+uniform vec4 uPenB[10]; // cracks, stipple, hatchRot, formFollow
+uniform float uShadowLift;
 uniform vec3 uAmbientColor;
 uniform vec3 uInk;
 uniform sampler2D uPaletteTex;
@@ -242,7 +248,10 @@ void main() {
   // ── Biome pen (rock only) ─────────────────────────────────────────
   int bi = uUseBiomes > 0.5 ? biomeId(vPosW.xz) : 0;
   float hatchRange = uUseBiomes > 0.5 ? uPenA[bi].x : uHatchRange;
-  float blackCut   = uUseBiomes > 0.5 ? uPenA[bi].y : uBlack;
+  // uShadowLift shrinks the flat-black cutoff toward 0: a live experiment
+  // (tune panel) for "shading reads as darkness" -- 0 leaves every biome's
+  // authored look untouched, 1 means a shadow never goes fully flat ink.
+  float blackCut   = (uUseBiomes > 0.5 ? uPenA[bi].y : uBlack) * (1.0 - uShadowLift);
   float pitchScale = uUseBiomes > 0.5 ? uPenA[bi].z : uPitchScale;
   float nib        = uUseBiomes > 0.5 ? uPenA[bi].w : uNib;
   float cracks     = uUseBiomes > 0.5 ? uPenB[bi].x : uCracks;

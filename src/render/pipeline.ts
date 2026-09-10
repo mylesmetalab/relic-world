@@ -83,7 +83,11 @@ type SharedSources = { inkMap: InkMap; biomeRamps: THREE.DataTexture };
 function penUniforms(): { a: THREE.Vector4[]; b: THREE.Vector4[] } {
   const a: THREE.Vector4[] = [];
   const b: THREE.Vector4[] = [];
-  for (let i = 0; i < 8; i++) {
+  // Must match uPenA/uPenB's declared size in shaders.ts (a GLSL array size
+  // is a compile-time constant) -- BIOMES grew past 8 in brief 15 and this
+  // loop silently didn't, so the newest biomes were reading another
+  // biome's pen entirely until this was caught.
+  for (let i = 0; i < BIOMES.length; i++) {
     const pen = (BIOMES[i] ?? BIOMES[0]!).pen;
     a.push(new THREE.Vector4(pen.hatchRange, pen.black, pen.pitchScale, pen.nib));
     b.push(new THREE.Vector4(pen.cracks, pen.stipple, pen.hatchRot, pen.formFollow));
@@ -158,6 +162,7 @@ function makeToonMaterial(
       uFill: { value: opts.fill },
       uDepth: { value: 0 },
       uDepthStrange: { value: 1 },
+      uShadowLift: { value: 0 },
       // Print-target size in px — only read by the USE_INSTANCE_HATCH branch
       // (instanced rocks project their own hatch anchor in-shader instead of
       // via anchorHatch's onBeforeRender); kept up to date by resizePipeline.
@@ -355,6 +360,7 @@ export function applyConfig(p: Pipeline): void {
     u.uBiomeScale.value = biomeScale();
     if (u.uPenA) { u.uPenA.value = pens.a; u.uPenB.value = pens.b; }
     u.uDepthStrange.value = P.depthStrange;
+    if (u.uShadowLift) u.uShadowLift.value = P.shadowLift;
   }
   BIOMES.forEach((b, i) => writeLut(p.biomeRamps, b.ramp, i));
   const r = p.rockMat.uniforms;

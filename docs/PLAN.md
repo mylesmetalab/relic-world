@@ -844,6 +844,40 @@ correctly became the relic, HUD read "holding (click to throw, F to
 drop)", screenshotted. Typecheck clean; pushed to `origin/main` and
 republished.
 
+### Twenty-seventh pass (2026-09-10, latest): 2 of 10 biomes were reading another biome's pen
+Found while investigating Myles's "hard to tell biomes apart" and shading
+feedback, not by guessing: `uPenA`/`uPenB` (`src/render/shaders.ts`) — the
+per-biome hatch/black/pitch/nib/cracks/stipple/hatchRot/formFollow values —
+are declared `[8]`, a GLSL array size, which is compile-time fixed. Brief
+15 grew `BIOMES` (`src/world/biomes.ts`) from 7 to 10 entries, but
+`penUniforms()`'s upload loop (`src/render/pipeline.ts`) was still
+hardcoded `for (let i = 0; i < 8; i++)`, so the two newest biomes past
+index 7 (Root Cellar, Crystal Vein) were never given their own slot at
+all — reading `uPenA[8]`/`uPenA[9]` in the shader is an out-of-bounds
+constant-array access, undefined per the GLSL spec and observed in
+practice as silently repeating an earlier biome's values, not the newest
+biomes' own authored ones. Fixed by sizing both the shader arrays and the
+upload loop to match (`uPenA[10]`/`uPenB[10]`, loop bound `BIOMES.length`).
+Verified directly: `uPenA.value.length` is now 10, and indices 7/8/9 each
+read back their own distinct authored pen (Crystal Vein's `black` reads
+0.15, notably lower than its neighbours, matching its "bright, glassy,
+sparse" design intent from brief 15) rather than duplicating each other.
+This directly affects biome legibility (2 of 10 biomes weren't reading as
+designed at all) and likely contributed to some of the "too dark" shading
+Myles flagged, since Root Cellar came up repeatedly in recent testing.
+
+Also added `press.shadowLift` (`src/world/config.ts` + a tune-panel slider,
+default 0 — no change to today's look): shrinks each biome's flat-black
+cutoff toward 0 as it rises, so a shadowed rock face keeps reading as
+hatched tone instead of going solid ink, live. This is a tool for Myles to
+feel out "shading reads as darkness/abyss" himself while actually playing
+(backtick → press → shadowLift) rather than a default anyone changed on his
+behalf — the design is deliberately posterized/hard-edged and that stays
+the default. Wired into the shared toon material (`makeToonMaterial` in
+`src/render/pipeline.ts`), so it reaches rock, instanced rocks (shared
+uniforms) and figures together; not wired into the ceiling material, which
+uses an unrelated shader with no `blackCut` concept.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
