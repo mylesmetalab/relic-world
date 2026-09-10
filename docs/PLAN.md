@@ -145,6 +145,22 @@ vertices dropped to the open floor height, matching `floorOpen`), the map
 marker flipped red to green, and walked through into the vault to the relic
 on its plinth. Next up per the backlog: comic-panel photo mode.
 
+### Ninth pass (2026-09-10, later)
+Comic-panel photo mode: the photo panel gained "Add panel" (up to 3, capped)
+and "Make page" (`src/ui/photo.ts`) — each Add panel call is a synchronous
+`renderStill` at a fixed 1000×750 capture size pushed onto a small buffer;
+Make page loads the buffered stills as images, composes them onto an
+offscreen canvas with 24 px gutters (dark ink background reading as the
+gutter lines) — one wide panel on top, two small panels below it, cover-fit
+cropped into their slots — plus a paper-colored caption strip (colorway name,
+today's date, a tagline) styled like the toast/chat-bubble boxes, then
+downloads the composed page as one PNG and clears the buffer. Verified at
+`?seed=7`: captured 3 panels at different orbit framings via the real UI
+buttons, read the downloaded PNG back into an `<img>` (1200×1296, matching
+the computed page size) and screenshotted it — gutters, the wide+two-small
+layout and the caption strip all present. Next up per the backlog: deeper
+is stranger.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

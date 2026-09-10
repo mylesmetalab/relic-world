@@ -29,7 +29,7 @@ Click to take the mouse.
 | **Enter** | chat — what you type streams above your figure as you type; Enter sends, Esc cancels |
 | **\`** | the tuning panel — every number the look and the world are built from; Export gives JSON to paste back, Copy link shares a `?cfg=` URL |
 | **🎤** | proximity voice, opt in — your mic goes to players near you, fading with distance |
-| **P** | photo mode — orbit, press controls, PNG export at print sizes |
+| **P** | photo mode — orbit, press controls, PNG export at print sizes, and a comic page (Add panel × up to 3, Make page) |
 | **M** | mute |
 | **R** / **T** | new seed · back to spawn |
 
@@ -93,6 +93,8 @@ the rock for you too, and what they push, you see move.
   the one being carried.
 - `src/net/` — [trystero](https://github.com/dmotz/trystero) rooms over
   WebRTC; state at 12 Hz, remote figures interpolated.
-- `src/ui/photo.ts` — photo mode.
+- `src/ui/photo.ts` — photo mode; also queues up to 3 framed stills into a
+  composed comic page (24 px gutters, one wide panel + two small, a
+  paper/ink caption strip) exported as one PNG.
 
 Plan and milestones: [docs/PLAN.md](docs/PLAN.md).
