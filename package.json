@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A walkable, procedurally generated blacklight riso-comic cave world \u2014 the Riso Relic Tuner's print pipeline as a place you can explore.",
+  "description": "A walkable, procedurally generated blacklight riso-comic cave world — the Riso Relic Tuner's print pipeline as a place you can explore.",
   "scripts": {
     "dev": "vite --port 5300 --strictPort",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
@@ -16,6 +16,9 @@
     "trystero": "^0.25.4"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
     "@types/three": "0.185.4",
     "typescript": "5.9.3",
     "vite": "8.2.2"

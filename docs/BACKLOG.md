@@ -161,6 +161,116 @@ that never send `onPeerLeave`).
   itself matters (discovery, payments, push).
 - Not worth it: a native rewrite. The shaders are the asset.
 
+**Built (2026-09-10): Simulator-buildable scaffold, done — signing and
+TestFlight are the only things left, and only Myles can do them.**
+
+- Added Capacitor (`@capacitor/core`, `@capacitor/cli`, `@capacitor/ios` as
+  devDependencies) and ran `cap init` / `cap add ios` — bundle id
+  `uk.co.mylespalmer.relicworld` (his own domain, reverse-DNS'd, per his ask
+  rather than a Metalab identifier). `capacitor.config.ts` sets `webDir:
+  "dist"` and a `backgroundColor` of `#0a0a12` matching the PWA manifest's
+  `theme_color`, so the WKWebView doesn't flash white before the canvas
+  paints. Capacitor 8's iOS template uses **Swift Package Manager**, not
+  CocoaPods — there is no `ios/App/App.xcworkspace` and no Podfile, so
+  `pod install` is never needed here; `xcodebuild` resolves the one SPM
+  dependency (`capacitor-swift-pm`) itself on first build.
+- `ios/App/App/Info.plist`: added `NSMicrophoneUsageDescription` ("Relic
+  World has opt-in proximity voice chat with nearby players. Your mic is
+  only used if you turn voice on.") for the existing opt-in voice feature,
+  and narrowed `UISupportedInterfaceOrientations`(`~ipad`) to landscape only,
+  matching `public/manifest.webmanifest`'s `"orientation": "landscape"`.
+- App icon and launch screen: adapted the exact procedural mark from
+  `scripts/icons.mjs` (the ink cairn + yellow flame on paper) at 1024×1024,
+  no alpha channel, into `ios/App/App/Assets.xcassets/AppIcon.appiconset/
+  AppIcon-512@2x.png` (Xcode 14+ uses one universal 1024 px source, despite
+  the legacy filename) — a reasonable adaptation, not a pixel-perfect
+  redesign for iOS's corner-mask/no-alpha rules. Replaced Capacitor's
+  default blue-logo splash images (`Assets.xcassets/Splash.imageset/*`,
+  three identical 2732×2732 files per Apple's universal launch-image setup)
+  with a flat `#0a0a12` fill instead of reinventing a splash design.
+- `tsconfig.json` needed no changes: `include: ["src"]` already keeps `tsc`
+  away from `ios/` and `capacitor.config.ts`; typecheck stayed clean
+  throughout.
+- **Verified via a real Simulator build**, no signing identity needed
+  (`security find-identity -v -p codesigning` shows 0 — confirmed a
+  Simulator build doesn't care): `vite build` → `cap sync ios` →
+  `xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk
+  iphonesimulator -destination 'generic/platform=iOS Simulator' build` →
+  **BUILD SUCCEEDED**, code-signed "Sign to Run Locally" (the ad-hoc
+  simulator signature that needs no developer account). Installed and
+  launched on an iPhone 17 Pro simulator (`xcrun simctl install`/`launch`);
+  screenshots (`xcrun simctl io screenshot`) show the real paper-cave scene
+  — riso hatching, the HUD, the touch stick/button cluster — rendering
+  correctly, not a blank or crashed WebView.
+- **Multiplayer verified working with zero code changes**, across two real
+  processes: a Browser-pane tab at `http://localhost:5300/?seed=7` and the
+  Simulator app pointed at the same URL (via a temporary
+  `capacitor.config.ts` `server.url` override, reverted before commit — the
+  shipped app still loads the bundled `dist/`). Both sides showed up in each
+  other's `__world.net.peers`/`remotes`, the HUD read "with `<other's
+  name>`" on both, and each screenshot shows the other's figure standing
+  nearby — confirming `src/main.ts`'s solo check (`?solo=1` or
+  `sites.metalab.com`'s hostname) correctly stays *false* for a
+  `capacitor://`/`http://localhost` origin, and that Nostr's `wss://` relay
+  signaling and the resulting WebRTC data channel work inside WKWebView with
+  no ATS exception needed.
+- **One real blocker hit and worked around, not silently skipped:** the
+  `mcp__Claude_Code_iOS_Simulator__control` tool (attach/launch/screenshot/
+  tap) refused every call with "Xcode is installed but not selected... run
+  `sudo xcode-select -s ...`", even though `xcode-select -p` and
+  `xcodebuild -version` both show Xcode correctly selected and building
+  fine directly — an environment-detection bug in that tool in this sandbox,
+  not a real Xcode problem, and not fixable without a `sudo` password this
+  session doesn't have. Worked around for the build/install/launch/
+  screenshot parts with `xcodebuild`/`xcrun simctl` directly (used above).
+  Touch-input verification (tap/swipe on the touch layer) could **not** be
+  completed: two different attempts to synthesize a click into the
+  Simulator's window via AppleScript/System Events (raw screen coordinates,
+  then an accessibility-element click) both left the app's "tap to enter"
+  hint unchanged, so this pass stops there per the two-failed-attempts rule
+  rather than continuing to guess at window/screen coordinate math. The
+  touch layer itself is unchanged code (already shipped, already used on
+  real touch devices), so this is a verification gap in this session, not a
+  known defect.
+- Nothing about the existing web build changed: the solo-mode regex in
+  `src/main.ts` is untouched, and this pass never ran the Metalab Sites
+  republish step — GitHub Pages and Metalab Sites keep behaving exactly as
+  before.
+
+**What's left — only Myles can do this part (no Apple Developer Program
+membership yet; `security find-identity` confirms zero signing identities
+on this Mac):**
+
+1. Enroll at developer.apple.com/programs/enroll as an **Individual**
+   ($99/yr) — an Apple ID and a payment method, no D-U-N-S number (that's
+   only for the Organization account type). Approval is usually instant to
+   about 48 hours.
+2. Sign that Apple ID into Xcode: **Xcode → Settings → Accounts → +**.
+3. Open `ios/App/App.xcodeproj` in Xcode (this project has no CocoaPods, so
+   there's no `.xcworkspace` to open instead — the `.xcodeproj` is it).
+   Select the **App** target → **Signing & Capabilities** → check
+   "Automatically manage signing" → pick his personal team. The bundle id
+   `uk.co.mylespalmer.relicworld` registers to his account automatically on
+   the first signed build; it does not need to be pre-registered anywhere.
+4. Create the app record in App Store Connect
+   (appstoreconnect.apple.com → My Apps → **+** → New App), matching that
+   bundle id, name "Relic World" (or whatever he'd rather call it there).
+5. In Xcode: pick **Any iOS Device** (not a Simulator) as the run
+   destination, then **Product → Archive**, then **Distribute App → App
+   Store Connect → Upload**. Processing in App Store Connect typically takes
+   15–60 minutes.
+6. In App Store Connect's **TestFlight** tab: answer the export-compliance
+   question (apps that only use HTTPS/TLS/WebRTC's built-in DTLS are
+   typically the standard "uses encryption, exempt" case — but read the
+   exact wording when it's in front of him rather than trusting a canned
+   answer), then add **Internal Testers** (up to 100 people, no review, near
+   -instant) or **External Testers** (needs a quick Beta App Review, usually
+   24–48 hours).
+7. Multiplayer needs no extra setup beyond the above — it rides the same
+   Nostr-relay WebRTC signaling the web build already uses, verified working
+   end-to-end in this pass (see above). Nothing App Store- or
+   TestFlight-specific is required for peers to find each other.
+
 ---
 
 ## How to work here

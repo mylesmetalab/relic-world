@@ -379,6 +379,42 @@ synthetic `WheelEvent`s at the canvas — many small fractional-`deltaY`,
 Mouse/Trackpad in the browser changed `input.resolvedDevice()` and persisted
 across the choice; screenshotted the panel showing the new control.
 
+### Seventeenth pass (2026-09-10, latest)
+iOS / App Store scaffold (brief 12): added Capacitor (`@capacitor/core`,
+`@capacitor/cli`, `@capacitor/ios`) and an `ios/` Xcode project (bundle id
+`uk.co.mylespalmer.relicworld`, Myles's own domain) wrapping the `dist/`
+build — Capacitor 8's iOS template uses Swift Package Manager, not
+CocoaPods, so there is no Podfile/`.xcworkspace` and no `pod install` step.
+`ios/App/App/Info.plist` gained `NSMicrophoneUsageDescription` for the
+existing opt-in voice chat and landscape-only orientations matching
+`public/manifest.webmanifest`; the app icon and splash reuse/adapt
+`scripts/icons.mjs`'s procedural ink-cairn mark instead of Capacitor's
+placeholder. Verified with a real, unsigned Simulator build — `xcodebuild
+-sdk iphonesimulator` succeeds (ad-hoc "Sign to Run Locally", no Apple
+Developer account needed), installed and launched on an iPhone 17 Pro
+simulator, and `xcrun simctl io screenshot` shows the actual paper-cave
+scene rendering (hatching, HUD, touch controls) rather than a blank
+WebView. Multiplayer verified working with no code changes: a Browser-pane
+tab and the Simulator app both on `?seed=7` (via a temporary,
+reverted-before-commit `capacitor.config.ts` `server.url` override) showed
+up in each other's `net.peers`/`remotes`, HUD and screenshots on both sides
+confirming `src/main.ts`'s solo check stays false for a
+`capacitor://`/`localhost` origin and that the Nostr/WebRTC signaling works
+unmodified inside WKWebView. One tool blocker: the dedicated iOS-Simulator
+control tool refused every call over an environment-detection bug (asking
+for a `sudo xcode-select` that direct `xcodebuild` calls prove is
+unnecessary); worked around with `xcodebuild`/`xcrun simctl` directly.
+Touch-input (tap/swipe) verification inside the Simulator could not be
+completed — two different AppleScript/System-Events synthetic-click
+attempts didn't register — so that's an open verification gap, not a known
+defect, since the touch layer itself is untouched, already-shipped code.
+Typecheck stayed clean (`tsconfig.json`'s `include: ["src"]` already keeps
+`ios/`/`capacitor.config.ts` out of it); nothing about the existing GitHub
+Pages or Metalab Sites web builds changed. What's left is entirely on
+Myles's side — an Apple Developer Program enrollment, signing in Xcode, and
+the first TestFlight upload — spelled out step by step in
+`docs/BACKLOG.md` brief 12.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
