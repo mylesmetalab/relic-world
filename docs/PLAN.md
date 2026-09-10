@@ -812,6 +812,38 @@ directly rather than guessing, and confirmed two distinct, real bugs:
 - Typecheck clean throughout; both fixes pushed directly to `origin/main`
   and republished (this changes visible behavior on the live build).
 
+### Twenty-sixth pass (2026-09-10, latest): the actual reason F never worked
+The spawn-level fix above was real, but Myles reported `F` still wasn't
+picking things up afterward — rightly, because it was a second, unrelated,
+more fundamental bug in the exact same key. `Input.once(code)`
+(`src/player/input.ts`) is consume-on-read: the first call after a
+keypress returns `true` and deletes the pending flag; every call after
+that (until the key is pressed again) returns `false`. The `KeyF` handler
+in `src/main.ts` called it three separate times across a chained
+`if / else if / else if`:
+```
+if (input.once("KeyF") && carrying) { ... }
+else if (input.once("KeyF") && !grab.held && targetPlayer && !carriedBy) { ... }
+else if (input.once("KeyF")) { grab.grabOrDrop(...) }
+```
+Whenever `carrying` is falsy — which is nearly always, "carrying another
+player" is a rare special state — the FIRST call still consumes the
+keypress (it reads `true` before `&& carrying` drags the whole condition
+back down to `false`), so by the time the real `grabOrDrop()` branch's own
+`input.once("KeyF")` call runs, the flag is already gone. `F` was
+structurally eating its own input on the one path that mattered most.
+Fixed by reading `input.once("KeyF")` exactly once into a local
+(`pressedF`) and branching on that. Grepped the rest of `main.ts` to
+confirm this was the only key checked more than once per frame — it was.
+Verified as the real end-to-end flow, not a synthetic shortcut: a real
+`KeyG` press (via `input`'s own pending-key set, not calling `spawnRelic()`
+directly), then iteratively aimed the real camera at the spawned relic's
+actual seated position until `grab.target` was set by the genuine raycast
+(not assigned by hand), then a real single `KeyF` press — `grab.held`
+correctly became the relic, HUD read "holding (click to throw, F to
+drop)", screenshotted. Typecheck clean; pushed to `origin/main` and
+republished.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

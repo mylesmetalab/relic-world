@@ -569,15 +569,16 @@ async function boot(): Promise<void> {
       }
       if (input.once("KeyT")) player.teleport(terrain.spawnPoint());
       if (input.once("KeyG")) spawnRelic();
-      if (input.once("KeyF") && carrying) {
+      const pressedF = input.once("KeyF");
+      if (pressedF && carrying) {
         // Set them down gently.
         net.sendThrowPlayer(carrying, [player.velocity.x, 0.5, player.velocity.z]);
         carrying = null;
-      } else if (input.once("KeyF") && !grab.held && targetPlayer && !carriedBy) {
+      } else if (pressedF && !grab.held && targetPlayer && !carriedBy) {
         carrying = targetPlayer;
         net.sendGrabPlayer(carrying);
         sound.mantle();
-      } else if (input.once("KeyF")) {
+      } else if (pressedF) {
         const wasHeld = grab.held;
         // Dropping a relic on the spawn pad collects it.
         if (wasHeld && wasHeld.id.endsWith(":r") && Math.hypot(player.position.x, player.position.z) < 5) {
