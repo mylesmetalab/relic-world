@@ -123,6 +123,28 @@ outline tracks the targeted remote figure and the toast lands on the victim's
 screen the moment `grabPlayer` fires. Next up per the backlog: two-torch
 doors.
 
+### Eighth pass (2026-09-10, night)
+Two-torch doors: sealed ~6 m vault rooms scattered through the lower cave
+(`Terrain.vault`, a ~36 m grid, one in ~3 cells, kept clear of spawn and
+galleries) — a ring wall baked straight into `Terrain.floor` alongside the
+usual solidity wall, so it is built, collided and dug exactly like any other
+wall. Two shrine-like stone pillars flank the sealed door (`Props.addVault`,
+reusing the plinth's fixed-body pattern) and a golem relic waits inside on
+its own plinth. Each frame `main.ts` checks placed torches against both
+pillars (`world.vaultTorchRange`, 3 m, a new CFG tunable next to
+`vaultRadius`/`vaultRing`); once both are lit it opens the door with the
+existing `digTo` at the threshold — the same call a pick tunnel makes — so
+it rides `myDigs`/`net.sendDig` for free and late joiners see it through the
+dig replay already in place, no new net message. The paper map marks a
+loaded vault's door red while sealed, green once open (`PaperMap.draw`'s new
+`doors` argument). Verified in the browser at `?seed=7`: found a vault via
+`terrain.vaultsInChunk`, confirmed the door cell read as a full wall
+(`floor` ~34 m, matching `floorAt`), placed two torches by the pillars,
+watched `checkVaultDoors` cut it open (`floorAt` at the door's grid
+vertices dropped to the open floor height, matching `floorOpen`), the map
+marker flipped red to green, and walked through into the vault to the relic
+on its plinth. Next up per the backlog: comic-panel photo mode.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

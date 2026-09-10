@@ -24,8 +24,9 @@ export class PaperMap {
     this.el.hidden = !this.open;
   }
 
-  /** Redraw (call at ~10 Hz while open). `me` and `others` are world xz. */
-  draw(me: { x: number; z: number; yaw: number }, others: Array<{ x: number; z: number }>): void {
+  /** Redraw (call at ~10 Hz while open). `me` and `others` are world xz;
+   *  `doors` marks two-torch vaults — red square sealed, green once open. */
+  draw(me: { x: number; z: number; yaw: number }, others: Array<{ x: number; z: number }>, doors: Array<{ x: number; z: number; open: boolean }> = []): void {
     if (!this.open) return;
     const { size, data, x0, z0 } = this.ink;
     const px = this.scratch.data;
@@ -56,6 +57,10 @@ export class PaperMap {
       this.ctx.arc(x - x0, z - z0, r, 0, Math.PI * 2);
       this.ctx.fill();
     };
+    for (const d of doors) {
+      this.ctx.fillStyle = d.open ? "#3ad16b" : "#c23b3b";
+      this.ctx.fillRect(d.x - x0 - 3, d.z - z0 - 3, 6, 6);
+    }
     for (const o of others) dot(o.x, o.z, "#46e0c8", 3);
     dot(me.x, me.z, "#f2f542", 3.5);
     // Heading tick.

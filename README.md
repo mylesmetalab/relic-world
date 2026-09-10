@@ -66,6 +66,11 @@ the rock for you too, and what they push, you see move.
   they get the same white outline a prop does — "F to pick up" is something
   you see, not just read. The one grabbed gets a chat-bubble-sized toast
   ("Stony-13 picked you up") and flails until thrown or set down.
+- **Some rooms are sealed.** Small vault rooms in the lower cave are walled
+  all the way to the ceiling, with two stone pillars flanking the door.
+  Plant a torch by each pillar and the wall opens — a golem relic waits
+  inside, on its own plinth. The paper map marks a known vault red until
+  it's open, then green.
 - **It sounds like paper and rock.** Everything is synthesized: footfalls, jump and land, knocks scaled by impact, a press roller
   that hums while new rock prints under your torch, and a blip when someone
   starts talking.

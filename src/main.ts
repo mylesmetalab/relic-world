@@ -190,6 +190,27 @@ async function boot(): Promise<void> {
     if (myDigs.length > 600) myDigs.shift();
     net.sendDig(m);
   };
+  // ── Two-torch vault doors: two placed torches near a vault's door
+  // pillars swing it open — the same digTo the pick uses on any wall, so it
+  // replicates for free (myDigs / net.sendDig) and late joiners see it via
+  // the existing dig replay on join. ───────────────────────────────────
+  const checkVaultDoors = () => {
+    const torches = chunks.props.placedTorches();
+    if (torches.length < 2) return;
+    const R = CFG.world.vaultTorchRange;
+    const near = (px: number, pz: number) => torches.some((t) => Math.hypot(t.position.x - px, t.position.z - pz) <= R);
+    for (const door of chunks.props.vaultDoors.values()) {
+      const open = terrain.floorAt(door.x, door.z) < terrain.floor(door.x, door.z) - 0.4;
+      if (open) continue;
+      if (!near(door.pillarA.x, door.pillarA.z) || !near(door.pillarB.x, door.pillarB.z)) continue;
+      const m: DigMsg = { l: 2, x: door.x, z: door.z, r: door.radius, d: 0, t: terrain.floorOpen(door.x, door.z) };
+      applyDig(m);
+      myDigs.push(m);
+      if (myDigs.length > 600) myDigs.shift();
+      net.sendDig(m);
+      sound.knock(6);
+    }
+  };
   // ── Picking up players (Gang Beasts rules) ──────────────────────────
   let carrying: string | null = null;
   let carriedBy: string | null = null;
@@ -504,6 +525,7 @@ async function boot(): Promise<void> {
 
     chunks.update(player.position);
     chunks.props.update();
+    checkVaultDoors();
     propSendT += dt;
     propSnapT += dt;
     torchSendT += dt;
@@ -615,7 +637,10 @@ async function boot(): Promise<void> {
     mapT += dt;
     if (map.open && mapT >= 0.1) {
       mapT = 0;
-      map.draw({ x: player.position.x, z: player.position.z, yaw: cam.yaw }, [...remotes.values()].map((r) => ({ x: r.pos.x, z: r.pos.z })));
+      const doors = [...chunks.props.vaultDoors.values()].map((d) => ({
+        x: d.x, z: d.z, open: terrain.floorAt(d.x, d.z) < terrain.floor(d.x, d.z) - 0.4,
+      }));
+      map.draw({ x: player.position.x, z: player.position.z, yaw: cam.yaw }, [...remotes.values()].map((r) => ({ x: r.pos.x, z: r.pos.z })), doors);
     }
     input.endFrame();
 

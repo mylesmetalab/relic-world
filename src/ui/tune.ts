@@ -14,7 +14,7 @@ import { setStlEnabled, stlEnabled } from "../world/settings";
 type Range = [number, number, number]; // min, max, step
 
 const RANGES: Record<keyof Tunables, Record<string, Range>> = {
-  world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1], crust: [1, 24, 0.5] },
+  world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1], crust: [1, 24, 0.5], vaultRadius: [1.2, 5, 0.1], vaultRing: [0.4, 2.5, 0.1], vaultTorchRange: [1, 8, 0.5] },
   light: { localReach: [8, 80, 1], remoteReach: [4, 60, 1], inkStamp: [4, 60, 1], fogNear: [2, 80, 1], fogFar: [10, 200, 1], fog: [0, 1, 0.01], fogTone: [0, 1, 0.01], mottle: [0, 1, 0.01], shadowGamma: [0.4, 3, 0.05], ceilCell: [6, 80, 1], ceilArcSpacing: [0.4, 6, 0.1] },
   press: { printScale: [0.2, 1, 0.05], misreg: [0, 3, 0.1], edgeW: [0.5, 3, 0.1], depthCut: [0.002, 0.05, 0.001], normalCut: [0.1, 1, 0.01], grain: [0, 1, 0.01], speck: [0, 0.02, 0.0005], halftone: [0, 1, 0.01], halftoneScale: [2, 24, 0.5], halftoneAngle: [0, 90, 1] },
   dig: { radius: [0.6, 5, 0.1], depth: [0.1, 4, 0.05], tunnelRadius: [0.8, 6, 0.1], rate: [1, 20, 1], reach: [2, 12, 0.5], stepUp: [0.8, 2.2, 0.1] },

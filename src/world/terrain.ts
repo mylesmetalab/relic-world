@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Simplex2, clamp, lerp, mulberry32, smoothstep } from "./noise";
+import { Simplex2, clamp, hash3, lerp, mulberry32, smoothstep } from "./noise";
 import { BIOMES, biomeAt, biomeIdAt, type Biome } from "./biomes";
 import { CFG } from "./config";
 
@@ -29,6 +29,37 @@ export const CELLS = 24; // cells per chunk edge (1 m)
 const SPAWN_CLEAR = 9;
 export type Level = 0 | 1 | 2;
 
+/** ~36 m grid of candidate two-torch-door vault sites (see `Terrain.vault`). */
+const VAULT_GRID = 36;
+const VAULT_CHANCE = 0.3;
+
+export type Vault = {
+  id: string; cx: number; cz: number; doorAngle: number;
+  /** 0..1 draw for which golem kind sits inside, and its shape seed. */
+  relicKindRng: number; relicSeed: number;
+};
+
+/** Where a vault's ring wall opens, and where its two door pillars stand
+ *  (just outside the ring, flanking the threshold). Pure function of the
+ *  vault, so terrain, props and the open-door check all agree on it. */
+export type VaultDoorway = {
+  x: number; z: number; radius: number;
+  pillarA: { x: number; z: number };
+  pillarB: { x: number; z: number };
+};
+export function vaultDoorway(v: Vault): VaultDoorway {
+  const R = CFG.world.vaultRadius, ring = CFG.world.vaultRing;
+  const dx = Math.cos(v.doorAngle), dz = Math.sin(v.doorAngle);
+  const px = -dz, pz = dx;
+  const midR = R + ring / 2;
+  const outR = R + ring + 1.0;
+  return {
+    x: v.cx + dx * midR, z: v.cz + dz * midR, radius: ring + 0.9,
+    pillarA: { x: v.cx + dx * outR + px * 1.1, z: v.cz + dz * outR + pz * 1.1 },
+    pillarB: { x: v.cx + dx * outR - px * 1.1, z: v.cz + dz * outR - pz * 1.1 },
+  };
+}
+
 export class Terrain {
   private readonly floorLo: Simplex2;
   private readonly floorHi: Simplex2;
@@ -41,6 +72,8 @@ export class Terrain {
   private readonly hills: Simplex2;
   /** Dug-out depth per integer world vertex ("x,z" → metres removed), per level. */
   readonly digs: [Map<string, number>, Map<string, number>, Map<string, number>] = [new Map(), new Map(), new Map()];
+  /** Vault sites, memoised per 36 m grid cell (there is at most one per cell). */
+  private readonly vaultCache = new Map<string, Vault | null>();
 
   constructor(readonly seed: number) {
     this.floorLo = new Simplex2(seed * 7 + 1);
@@ -94,15 +127,68 @@ export class Terrain {
   }
 
   /** The lower floor, walls included. In a gallery a pinch wall rises all the
-   *  way to the upper floor, so its top IS the next level. */
+   *  way to the upper floor, so its top IS the next level. A vault's ring
+   *  wall is just another wall source — the same lift, the same dig map. */
   floor(x: number, z: number): number {
     const open = this.floorOpen(x, z);
     const s = this.solidity(x, z);
-    const wall = smoothstep(CFG.world.wallLo, CFG.world.wallHi, s);
+    const wall = Math.max(smoothstep(CFG.world.wallLo, CFG.world.wallHi, s), this.vaultWall(x, z));
     if (wall <= 0) return open;
     const g = this.gallery(x, z);
     const top = g > 0.5 ? this.ceiling(x, z) + SLAB : this.ceiling(x, z) + 0.4;
     return lerp(open, top, wall);
+  }
+
+  /** The vault (if any) whose ~36 m site contains (x,z): a sealed lower-cave
+   *  room, well clear of spawn and out from under a gallery. Deterministic
+   *  per seed, memoised per grid cell — cheap to call from anywhere. */
+  vault(x: number, z: number): Vault | null {
+    const gx = Math.floor(x / VAULT_GRID), gz = Math.floor(z / VAULT_GRID);
+    const key = `${gx},${gz}`;
+    const cached = this.vaultCache.get(key);
+    if (cached !== undefined) return cached;
+    const rng = mulberry32(hash3(this.seed ^ 0x7a17c0de, gx, gz));
+    let v: Vault | null = null;
+    if (rng() <= VAULT_CHANCE) {
+      const jitter = VAULT_GRID * 0.25;
+      const cx = gx * VAULT_GRID + VAULT_GRID / 2 + (rng() - 0.5) * jitter;
+      const cz = gz * VAULT_GRID + VAULT_GRID / 2 + (rng() - 0.5) * jitter;
+      const doorAngle = Math.floor(rng() * 4) * (Math.PI / 2);
+      const relicKindRng = rng();
+      const relicSeed = Math.floor(rng() * 1e6);
+      if (Math.hypot(cx, cz) >= SPAWN_CLEAR * 3 && this.gallery(cx, cz) < 0.4) {
+        v = { id: `v${gx}_${gz}`, cx, cz, doorAngle, relicKindRng, relicSeed };
+      }
+    }
+    this.vaultCache.set(key, v);
+    return v;
+  }
+
+  /** Every vault whose centre could land inside this 24 m chunk (a chunk can
+   *  straddle up to four 36 m vault sites, so its corners cover them all). */
+  vaultsInChunk(cx: number, cz: number): Vault[] {
+    const ox = cx * CHUNK, oz = cz * CHUNK;
+    const gxs = new Set([Math.floor(ox / VAULT_GRID), Math.floor((ox + CHUNK - 1) / VAULT_GRID)]);
+    const gzs = new Set([Math.floor(oz / VAULT_GRID), Math.floor((oz + CHUNK - 1) / VAULT_GRID)]);
+    const out: Vault[] = [];
+    for (const gx of gxs) {
+      for (const gz of gzs) {
+        const v = this.vault(gx * VAULT_GRID + 1, gz * VAULT_GRID + 1);
+        if (v && v.cx >= ox && v.cx < ox + CHUNK && v.cz >= oz && v.cz < oz + CHUNK) out.push(v);
+      }
+    }
+    return out;
+  }
+
+  /** 0..1 vault-wall contribution at (x,z): a ring around a vault's centre. */
+  vaultWall(x: number, z: number): number {
+    const v = this.vault(x, z);
+    if (!v) return 0;
+    const R = CFG.world.vaultRadius, ring = CFG.world.vaultRing;
+    const d = Math.hypot(x - v.cx, z - v.cz);
+    const inner = smoothstep(R - 0.3, R, d);
+    const outer = 1 - smoothstep(R + ring, R + ring + 0.3, d);
+    return inner * outer;
   }
 
   /** 0..1 — where the upper level exists (above 0.5). Never over the spawn column. */

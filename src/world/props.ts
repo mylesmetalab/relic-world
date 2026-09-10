@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import { anchorHatch, makeFigureMaterial, disposeFigureMaterial, setFigureColorway, type Pipeline } from "../render/pipeline";
 import type { Physics } from "../physics/world";
-import { CHUNK, Terrain, rockGeometry } from "./terrain";
+import { CHUNK, Terrain, rockGeometry, vaultDoorway, type Vault, type VaultDoorway } from "./terrain";
 import { mulberry32 } from "./noise";
 import { loadPacked, PACKED_IDS, type PackedId } from "./models";
 import { FACING } from "../player/figure";
@@ -44,7 +44,7 @@ export type Prop = {
 /** One prop's motion state on the wire. */
 export type PropState = { k: string; p: [number, number, number]; q: [number, number, number, number]; v: [number, number, number]; w: [number, number, number] };
 
-export type ChunkProps = { key: string; props: Prop[]; statics: Array<{ body: RAPIER.RigidBody; collider: RAPIER.Collider }>; alive: boolean; torches: string[] };
+export type ChunkProps = { key: string; props: Prop[]; statics: Array<{ body: RAPIER.RigidBody; collider: RAPIER.Collider }>; alive: boolean; torches: string[]; vaults: string[] };
 
 /** A standing torch: a light that prints the rock around it. */
 export type TorchProp = { id: string; position: THREE.Vector3; reach: number; mesh: THREE.Group; placed: boolean };
@@ -65,6 +65,9 @@ export class Props {
   /** Every torch in the world right now (shrines + placed), by id. */
   readonly torches = new Map<string, TorchProp>();
   private torchMat: THREE.ShaderMaterial | null = null;
+  /** Every currently-loaded vault's doorway geometry, by vault id — main.ts
+   *  checks these each frame against `placedTorches()`. */
+  readonly vaultDoors = new Map<string, VaultDoorway>();
 
   constructor(private readonly p: Pipeline, private readonly ph: Physics, private readonly terrain: Terrain) {
     p.scene.add(this.root);
@@ -76,7 +79,7 @@ export class Props {
 
   /** Spawn a chunk's props (sync for shards; relics arrive when their model loads). */
   spawn(cx: number, cz: number, chunkSeed: number): ChunkProps {
-    const cp: ChunkProps = { key: `${cx},${cz}`, props: [], statics: [], alive: true, torches: [] };
+    const cp: ChunkProps = { key: `${cx},${cz}`, props: [], statics: [], alive: true, torches: [], vaults: [] };
     const rng = mulberry32(chunkSeed ^ 0x5bd1e995);
     const shards = 2 + Math.floor(rng() * 4);
     for (let i = 0; i < shards; i++) {
@@ -116,6 +119,8 @@ export class Props {
         }
       }
     }
+    // Two-torch vault(s) whose ~36 m site lands in this chunk.
+    for (const v of this.terrain.vaultsInChunk(cx, cz)) this.addVault(cp, v);
     return cp;
   }
 
@@ -174,7 +179,7 @@ export class Props {
   /** Drop a golden relic right here (debug / spawn button). */
   spawnRelicAt(x: number, z: number): void {
     const key = `spawn:${Date.now()}`;
-    const cp: ChunkProps = { key, props: [], statics: [], alive: true, torches: [] };
+    const cp: ChunkProps = { key, props: [], statics: [], alive: true, torches: [], vaults: [] };
     const kind = GOLEM_KINDS[Math.floor(Math.random() * GOLEM_KINDS.length)]!;
     this.golemRelic(cp, kind, Math.floor(Math.random() * 1e6), x, z, Math.random() * Math.PI * 2, this.terrain.floorAt(x, z) - 0.5);
     this.loose.push(cp);
@@ -197,7 +202,7 @@ export class Props {
     return true;
   }
 
-  private plinth(cp: ChunkProps, x: number, z: number): void {
+  private plinth(cp: ChunkProps, x: number, z: number, id = `${cp.key}:plinth`): void {
     const { R, world } = this.ph;
     const h = 0.5;
     const y = this.terrain.floor(x, z);
@@ -210,11 +215,45 @@ export class Props {
     const body = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(x, y + h / 2, z));
     const col = world.createCollider(R.ColliderDesc.cylinder(h / 2, 0.62).setFriction(0.9), body);
     cp.statics.push({ body, collider: col });
-    cp.props.push({ id: `${cp.key}:plinth`, body, collider: col, mesh, material: null, geometry: geo, dynamic: false, spawn: { x, y, z }, lastV: new THREE.Vector3() });
+    cp.props.push({ id, body, collider: col, mesh, material: null, geometry: geo, dynamic: false, spawn: { x, y, z }, lastV: new THREE.Vector3() });
+  }
+
+  /** A standing stone post — a vault's door pillars, and anything else that
+   *  wants a shrine-like marker without a torch on it. */
+  private pillar(cp: ChunkProps, id: string, x: number, z: number): void {
+    const { R, world } = this.ph;
+    const h = 1.6;
+    const y = this.terrain.floor(x, z);
+    const geo = new THREE.CylinderGeometry(0.16, 0.26, h, 6, 1);
+    geo.translate(0, h / 2, 0);
+    const mesh = new THREE.Mesh(geo, this.p.rockMat);
+    mesh.position.set(x, y, z);
+    anchorHatch(this.p, mesh, 0.5);
+    this.root.add(mesh);
+    const body = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(x, y + h / 2, z));
+    const col = world.createCollider(R.ColliderDesc.cylinder(h / 2, 0.22).setFriction(0.9), body);
+    cp.statics.push({ body, collider: col });
+    cp.props.push({ id, body, collider: col, mesh, material: null, geometry: geo, dynamic: false, spawn: { x, y, z }, lastV: new THREE.Vector3() });
+  }
+
+  /** A sealed vault: door pillars flank the (still walled) threshold, and a
+   *  golem relic waits inside on its own plinth. The wall itself is baked
+   *  into `terrain.floor` (a ring); opening it is main.ts's job — it digs
+   *  the door cells like any other tunnel once two torches stand by the
+   *  pillars, which the existing dig-replay carries to late joiners. */
+  private addVault(cp: ChunkProps, v: Vault): void {
+    const doorway = vaultDoorway(v);
+    this.vaultDoors.set(v.id, doorway);
+    cp.vaults.push(v.id);
+    this.pillar(cp, `${v.id}:pa`, doorway.pillarA.x, doorway.pillarA.z);
+    this.pillar(cp, `${v.id}:pb`, doorway.pillarB.x, doorway.pillarB.z);
+    this.plinth(cp, v.cx, v.cz, `${v.id}:plinth`);
+    const kind = GOLEM_KINDS[Math.floor(v.relicKindRng * GOLEM_KINDS.length)]!;
+    this.golemRelic(cp, kind, v.relicSeed, v.cx, v.cz, v.doorAngle + Math.PI, undefined, `${v.id}:r`);
   }
 
   /** A miniature of one of the cave's own characters, in gold, on the plinth. */
-  private golemRelic(cp: ChunkProps, kind: GolemKind, seed: number, x: number, z: number, yaw: number, plinthTop?: number): void {
+  private golemRelic(cp: ChunkProps, kind: GolemKind, seed: number, x: number, z: number, yaw: number, plinthTop?: number, id = `${cp.key}:r`): void {
     const geo = buildGolem(kind, seed);
     geo.computeBoundingBox();
     const bb = geo.boundingBox!;
@@ -246,7 +285,7 @@ export class Props {
     let hullMinY = Infinity;
     for (let i = 1; i < arr.length; i += 3) hullMinY = Math.min(hullMinY, arr[i]!);
     const y = (plinthTop ?? this.terrain.floorAt(x, z)) + 0.5 - hullMinY + 0.01;
-    const prop = this.makeDynamic(`${cp.key}:r`, geo, arr, x, y, z, yaw, null, GOLD_DENSITY, holder);
+    const prop = this.makeDynamic(id, geo, arr, x, y, z, yaw, null, GOLD_DENSITY, holder);
     prop.material = material;
     cp.props.push(prop);
   }
@@ -398,6 +437,7 @@ export class Props {
   dispose(cp: ChunkProps): void {
     cp.alive = false;
     for (const id of cp.torches) this.removeTorch(id);
+    for (const id of cp.vaults) this.vaultDoors.delete(id);
     for (const prop of cp.props) {
       this.all.delete(prop);
       this.byId.delete(prop.id);
