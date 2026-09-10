@@ -706,6 +706,72 @@ See `docs/PLAN.md`'s twenty-second pass for full detail.
 
 ---
 
+## 18. A boulder that takes two
+
+**Goal:** reuse the physics you already have (dynamic rigid-body props,
+Rapier's kinematic-controller-pushes-dynamic-bodies via
+`setApplyImpulsesToDynamicBodies(true)`, already set in
+`src/player/controller.ts`) for something more theatrical than a statue
+that topples at a touch: a big, heavy boulder that one player can barely
+budge alone, but two pushing together move for real. No new mechanic, no
+"requires N players" gate — just mass tuned so the physics itself makes it
+a co-op moment.
+
+- `src/world/props.ts` already has everything needed: `makeDynamic(id, geo,
+  hullPts, x, y, z, yaw, material, density, mesh?)`, and two existing
+  density tiers to calibrate against (`ROCK_DENSITY = 800` for shards/
+  statues, `GOLD_DENSITY = 6000` for relics). Build one new large, roughly
+  round boulder shape (bigger radius than any existing shard, low height-to-
+  radius ratio so it reads as a boulder, not a stalagmite — `rockGeometry`
+  can produce this at the right radius/height args) at a density high
+  enough that ONE player's push barely moves it but two clearly do — this
+  needs real in-browser tuning, not a guess: measure actual displacement
+  over N seconds of one simulated push vs. two real players pushing
+  together (see Verify).
+- Placement: a handful, not everywhere — sparse and findable, the way
+  vaults are sparse (`Terrain.vault`/`vaultsInChunk` in `terrain.ts` is a
+  reasonable pattern to mirror for "boulder sites," own noise/hash, own
+  grid spacing, no need to guarantee a literal slope under it — the mass
+  tuning is what makes this a two-player moment, a slope is a nice-to-have
+  bonus if convenient, not a requirement). Lower cave (level 2) is fine.
+- **Important existing-architecture note, so this isn't rebuilt from
+  scratch:** prop physics ownership (`src/main.ts`'s `isOwner`, distance-
+  based, recomputed every frame — "the nearest player simulates a prop and
+  everyone else follows") already means two players standing near the same
+  prop effectively hand ownership back and forth as their relative distance
+  shifts, each contributing their own push during their momentary ownership
+  window. This is the existing mechanism this brief rides on for a
+  "two-player" feel — do not attempt to build genuine simultaneous dual-
+  authority physics for one prop; that's a much bigger change than this
+  brief is asking for. If the handoff-based feel doesn't read as
+  convincingly cooperative once tuned, say so honestly rather than trying
+  to redesign the sync model.
+- A knock/impact sound already exists (`chunks.props.onKnock`, wired to
+  `sound.knock`) — reuse it, no new sound needed.
+- No harm, no new interaction verb: walking into it (or being near it while
+  it rolls) does nothing beyond ordinary physics contact, same as every
+  other dynamic prop today.
+
+Files: `src/world/props.ts` (new boulder shape + spawn/placement logic),
+`src/world/terrain.ts` (a sparse placement field if mirroring the vault
+pattern), `src/world/config.ts` + `src/ui/tune.ts` if the density/size ends
+up worth exposing as a tunable rather than a fixed constant (use judgement
+— this may be fine as a fixed, tuned-by-feel number like `ROCK_DENSITY`
+itself is).
+
+Verify: `?seed=7`, find a placed boulder (may need to sample/search a few
+sites or teleport, same as biome-sampling in brief 15). Push it alone for a
+fixed few seconds and measure real displacement (should be small/slow).
+Two-tab test — both players push from the same side (or opposite sides)
+for the same duration and measure displacement again (should be clearly
+larger) — this is the one thing that actually needs a real two-tab test,
+not a synthetic stand-in, since it's specifically about the felt difference
+between one and two players; recent passes (brief 17) found this sandbox's
+WebRTC actually works, so attempt it for real before falling back to
+anything synthetic. Screenshot the boulder both at rest and mid-roll.
+
+---
+
 ## How to work here
 
 - Repo `~/Sites/relic-world`, public `mylesmetalab/relic-world`. Push to
