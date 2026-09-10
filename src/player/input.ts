@@ -1,3 +1,6 @@
+import { CFG } from "../world/config";
+import { getControlScheme, setControlScheme, type ControlScheme } from "../world/settings";
+
 /** Keyboard + pointer-lock mouse. Look deltas accumulate between frames. */
 export class Input {
   readonly down = new Set<string>();
@@ -12,6 +15,13 @@ export class Input {
   lookMode: "free" | "locked" = "free";
   /** Two-finger swipe / wheel turns the view (off while photo mode zooms). */
   wheelLooks = true;
+  /** Mouse vs. trackpad look sensitivity: "auto" guesses from wheel-event
+   *  shape (see `guessDeviceFromWheel`); the tune panel can force either.
+   *  Persisted (`world/settings.ts`) so a choice survives a reload. */
+  controlScheme: ControlScheme = getControlScheme();
+  /** The device "auto" currently guesses. Starts "mouse" — today's behaviour
+   *  — until a wheel event gives a signal one way or the other. */
+  private guessedDevice: "mouse" | "trackpad" = "mouse";
   private dragging = false;
   private rightDown = false;
   /** Fed by the touch stick; added to the keyboard axes. */
@@ -55,8 +65,9 @@ export class Input {
     // button (hosts that refuse pointer lock, trackpads in embedded views).
     window.addEventListener("mousemove", (e) => {
       if (this.locked || (this.rightDown && (e.buttons & 2))) {
-        this.lookX += e.movementX;
-        this.lookY += e.movementY;
+        const m = this.sensMultiplier();
+        this.lookX += e.movementX * m;
+        this.lookY += e.movementY * m;
       }
     });
     canvas.addEventListener("mousedown", (e) => {
@@ -75,11 +86,44 @@ export class Input {
     // Trackpads: a two-finger swipe looks around (free mode). Photo mode uses
     // the wheel for zoom instead, so it can switch this off.
     canvas.addEventListener("wheel", (e) => {
+      this.guessDeviceFromWheel(e);
       if (this.locked || !this.wheelLooks) return;
       e.preventDefault();
-      this.lookX += e.deltaX * 1.1;
-      this.lookY += e.deltaY * 1.1;
+      const m = this.sensMultiplier();
+      this.lookX += e.deltaX * 1.1 * m;
+      this.lookY += e.deltaY * 1.1 * m;
     }, { passive: false });
+  }
+
+  /** Refine the auto-detect guess from one wheel event's shape. Trackpads
+   *  fire frequent, often-fractional `deltaMode: 0` (pixel) deltas that are
+   *  small per physical gesture; mouse wheels fire `deltaMode: 1` (line)
+   *  deltas, or big, whole-number pixel jumps with no horizontal component.
+   *  Cheap enough to re-run on every event — no need to freeze after "the
+   *  first few". A no-op once the scheme is set explicitly. */
+  private guessDeviceFromWheel(e: WheelEvent): void {
+    if (this.controlScheme !== "auto") return;
+    const looksTrackpad = e.deltaMode === 0 && (e.deltaX !== 0 || !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 40);
+    const looksMouse = e.deltaMode === 1 || (e.deltaMode === 0 && e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
+    if (looksTrackpad && !looksMouse) this.guessedDevice = "trackpad";
+    else if (looksMouse && !looksTrackpad) this.guessedDevice = "mouse";
+    // else ambiguous — keep the previous guess.
+  }
+
+  /** Persist and apply a control-scheme choice (from the tune panel). */
+  setControlScheme(scheme: ControlScheme): void {
+    this.controlScheme = scheme;
+    setControlScheme(scheme);
+  }
+
+  /** The concrete device the current scheme resolves to. */
+  resolvedDevice(): "mouse" | "trackpad" {
+    return this.controlScheme === "auto" ? this.guessedDevice : this.controlScheme;
+  }
+
+  /** Look-sensitivity multiplier (`world/config.ts`) for the resolved device. */
+  private sensMultiplier(): number {
+    return this.resolvedDevice() === "trackpad" ? CFG.controls.trackpadSens : CFG.controls.mouseSens;
   }
 
   requestLock(): void {

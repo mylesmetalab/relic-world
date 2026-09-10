@@ -13,6 +13,20 @@ export function setStlEnabled(on: boolean): void {
   localStorage.setItem(STL_KEY, on ? "1" : "0");
 }
 
+const CONTROL_SCHEME_KEY = "relic-world:control-scheme";
+
+/** "auto" guesses mouse vs. trackpad from wheel-event shape (see `Input`);
+ *  the others force a device so the look-sensitivity multiplier is fixed. */
+export type ControlScheme = "auto" | "mouse" | "trackpad";
+
+export function getControlScheme(): ControlScheme {
+  const v = localStorage.getItem(CONTROL_SCHEME_KEY);
+  return v === "mouse" || v === "trackpad" ? v : "auto";
+}
+export function setControlScheme(scheme: ControlScheme): void {
+  localStorage.setItem(CONTROL_SCHEME_KEY, scheme);
+}
+
 /** The shared world rolls to a new seed on a fixed clock, so everyone who
  *  opens the game without a `?seed=` lands in the same cave — and the cave
  *  itself is never the same for long. */

@@ -2,6 +2,7 @@ import { CFG, DEFAULTS, configToUrlParam, loadConfig, resetConfig, type Tunables
 import { BIOMES, type Biome } from "../world/biomes";
 import { ENVWAYS } from "../render/palette";
 import { setStlEnabled, stlEnabled } from "../world/settings";
+import type { Input } from "../player/input";
 
 /**
  * The secret tuning panel (backtick). Every number the look and the world
@@ -20,6 +21,7 @@ const RANGES: Record<keyof Tunables, Record<string, Range>> = {
   dig: { radius: [0.6, 5, 0.1], depth: [0.1, 4, 0.05], tunnelRadius: [0.8, 6, 0.1], rate: [1, 20, 1], reach: [2, 12, 0.5], stepUp: [0.8, 2.2, 0.1] },
   figure: { hull: [0, 3, 0.05], hatchRange: [0.2, 0.95, 0.01], black: [0, 0.4, 0.005], pitch: [3, 16, 0.5], nib: [0.3, 2, 0.05], rim: [0, 1, 0.01], fill: [0, 1, 0.01], stipple: [0, 1, 0.01], formFollow: [0, 1, 0.01], zoneSoft: [0, 0.2, 0.005], zoneJitter: [0, 0.1, 0.005], hiCut: [0.3, 1, 0.01], hatchStyle: [0, 1, 1] },
   player: { landHardSpeed: [4, 25, 0.5], landStumbleDur: [0, 1.2, 0.05], landThumpMag: [0, 1, 0.01], landChipCount: [4, 60, 1], groundEscapeMargin: [1, 15, 0.5] },
+  controls: { mouseSens: [0.3, 3, 0.05], trackpadSens: [0.3, 3, 0.05] },
 };
 const PEN_RANGES: Record<string, Range> = {
   hatchRange: [0.2, 0.95, 0.01], black: [0, 0.8, 0.01], pitchScale: [0.4, 3, 0.05], nib: [0.3, 2, 0.05], cracks: [0, 1, 0.01], stipple: [0, 1, 0.01], hatchRot: [-1.6, 1.6, 0.05], formFollow: [0, 1, 0.01],
@@ -40,7 +42,7 @@ export class Tune {
   private readonly panel: HTMLDivElement;
   private readonly status: HTMLElement;
 
-  constructor(private readonly cb: TuneCallbacks) {
+  constructor(private readonly cb: TuneCallbacks, private readonly input: Input) {
     this.panel = document.getElementById("tune") as HTMLDivElement;
     this.panel.innerHTML = `<h2>Tuning <span class="k">\` to close</span></h2>
       <div class="tune-actions">
@@ -49,6 +51,14 @@ export class Tune {
       </div>
       <textarea data-k="json" rows="5" placeholder="paste JSON here, then Import"></textarea>
       <label class="tune-check"><input type="checkbox" data-k="stl"> STL miniatures in the cast (Bast, Rook, Cam) — reload to apply</label>
+      <label class="tune-row"><span>Look controls</span>
+        <select data-k="scheme">
+          <option value="auto">Auto</option>
+          <option value="mouse">Mouse</option>
+          <option value="trackpad">Trackpad</option>
+        </select>
+        <output data-k="schemeOut"></output>
+      </label>
       <span class="status" data-k="status"></span>
       <div data-k="sections"></div>`;
     this.status = this.panel.querySelector('[data-k="status"]')!;
@@ -79,6 +89,13 @@ export class Tune {
     const stl = q<HTMLInputElement>("stl");
     stl.checked = stlEnabled();
     stl.addEventListener("change", () => { setStlEnabled(stl.checked); this.say("saved — reload to change the cast"); });
+    const scheme = q<HTMLSelectElement>("scheme");
+    scheme.value = input.controlScheme;
+    this.refreshSchemeOut();
+    scheme.addEventListener("change", () => {
+      input.setControlScheme(scheme.value as "auto" | "mouse" | "trackpad");
+      this.refreshSchemeOut();
+    });
     q<HTMLButtonElement>("reset").addEventListener("click", () => {
       resetConfig();
       for (let i = 0; i < BIOMES.length; i++) Object.assign(BIOMES[i]!.pen, BIOME_DEFAULTS[i]!.pen), Object.assign(BIOMES[i]!, { terrace: BIOME_DEFAULTS[i]!.terrace, relief: BIOME_DEFAULTS[i]!.relief, rocks: BIOME_DEFAULTS[i]!.rocks, tallShare: BIOME_DEFAULTS[i]!.tallShare, ceilLift: BIOME_DEFAULTS[i]!.ceilLift, ramp: BIOME_DEFAULTS[i]!.ramp });
@@ -98,6 +115,14 @@ export class Tune {
   toggle(): void {
     this.open = !this.open;
     this.panel.hidden = !this.open;
+    if (this.open) this.refreshSchemeOut();
+  }
+
+  /** Show which device the current scheme resolves to (only informative for
+   *  "auto" — the other two are the device itself). */
+  private refreshSchemeOut(): void {
+    const out = this.panel.querySelector<HTMLOutputElement>('[data-k="schemeOut"]');
+    if (out) out.textContent = this.input.controlScheme === "auto" ? `→ ${this.input.resolvedDevice()}` : "";
   }
 
   /** Config + biomes (pen, ground, ramp name) as one JSON document. */

@@ -19,7 +19,7 @@ Click to take the mouse.
 |---|---|
 | **WASD** / **Shift** / **Space** | move · run · jump |
 | push into a ledge | climb — a mantle up to about head height; costs stamina, which refills on the ground |
-| **two-finger swipe** / **arrows** / **right-drag** | look; **L** locks the mouse for FPS-style look |
+| **two-finger swipe** / **arrows** / **right-drag** | look; **L** locks the mouse for FPS-style look; the tuning panel's "Look controls" picks Auto (guesses mouse vs. trackpad from your first scroll/swipe), Mouse or Trackpad, each with its own sensitivity |
 | **V** | first ↔ third person |
 | **C** / **⇧C** | change character — nine things the cave grew: Cairn, Shard, Menhir, Spire, Dolmen, Castle, Totem, Wisp, Hound (the STL miniatures Bast, Rook and Cam join the cast via a toggle in the tuning panel) |
 | **Q / E** | your figure's ink colorway |

@@ -107,6 +107,19 @@ export type Tunables = {
      *  the player is teleported up to `terrain.groundAt`. */
     groundEscapeMargin: number;
   };
+  controls: {
+    /** Look-sensitivity multiplier applied to mouse deltas — pointer-locked
+     *  `movementX/Y` and the free-mode drag-to-look path. */
+    mouseSens: number;
+    /** Look-sensitivity multiplier applied to trackpad deltas — both
+     *  pointer-locked drag and the two-finger wheel-swipe fallback. Higher
+     *  than the mouse multiplier: a trackpad's raw deltas (especially via
+     *  the wheel path) read smaller per physical gesture at the same nominal
+     *  sensitivity. Which multiplier applies depends on `controlScheme`
+     *  (`Input`, persisted in `settings.ts`) — "auto" guesses the device from
+     *  wheel-event shape. */
+    trackpadSens: number;
+  };
 };
 
 export const DEFAULTS: Tunables = {
@@ -116,6 +129,7 @@ export const DEFAULTS: Tunables = {
   dig: { radius: 1.2, depth: 0.3, tunnelRadius: 1.2, rate: 5, reach: 4.5, stepUp: 1.3 },
   figure: { hull: 0.55, hatchRange: 0.5, black: 0.1, pitch: 8, nib: 0.75, rim: 0.4, fill: 0.3, stipple: 0.06, formFollow: 0.6, zoneSoft: 0.04, zoneJitter: 0.035, hiCut: 0.78, hatchStyle: 0 },
   player: { landHardSpeed: 10, landStumbleDur: 0.4, landThumpMag: 0.35, landChipCount: 20, groundEscapeMargin: 4 },
+  controls: { mouseSens: 1.0, trackpadSens: 1.6 },
 };
 
 function clone<T>(v: T): T {

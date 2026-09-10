@@ -358,6 +358,27 @@ after ~9 s tab one's `net.peers` and `remotes` both went empty. Brief 11 is
 closed with the code as it already stood. Next up per the backlog: iOS / App
 Store (brief 12 — an assessment, not a build).
 
+### Ad-hoc (2026-09-10): mouse/trackpad control scheme
+Myles asked live, mid-session, whether look controls could switch between
+mouse and trackpad, or auto-detect — not a numbered backlog brief. Added
+`Input.controlScheme: "auto" | "mouse" | "trackpad"`, persisted in
+`localStorage` (`relic-world:control-scheme`, `world/settings.ts`), plus two
+new tunables in `world/config.ts`/`ui/tune.ts` (`CFG.controls.mouseSens` = 1.0,
+`trackpadSens` = 1.6) applied as a multiplier on look deltas in both existing
+look paths — pointer-locked `mousemove` and the wheel-swipe fallback — so
+touch's own drag-to-look (`ui/touch.ts`, writes `input.lookX/Y` directly) is
+untouched. `"auto"` guesses the device from wheel-event shape (deltaMode,
+integer-ness, size, presence of deltaX) on every `wheel` event, re-running
+cheaply rather than freezing after a fixed count; defaults to "mouse" (today's
+behaviour) until a wheel event gives a signal. Exposed as an Auto/Mouse/
+Trackpad `<select>` in the tune panel next to the STL checkbox, with a small
+"→ mouse/trackpad" readout while in Auto. Verified: typecheck clean; dispatched
+synthetic `WheelEvent`s at the canvas — many small fractional-`deltaY`,
+`deltaMode: 0` events resolved auto to `trackpad`, then a run of large integer
+`deltaMode: 1` events resolved it back to `mouse`; forcing the selector to
+Mouse/Trackpad in the browser changed `input.resolvedDevice()` and persisted
+across the choice; screenshotted the panel showing the new control.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

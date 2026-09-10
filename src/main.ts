@@ -333,7 +333,7 @@ async function boot(): Promise<void> {
       player.teleport(new THREE.Vector3(player.position.x, terrain.levelAt(lv, player.position.x, player.position.z) + 0.5, player.position.z));
     },
     onSpawnRelic: spawnRelic,
-  });
+  }, input);
 
   // Drop an .stl on the window to wear it (local; peers see your last character).
   window.addEventListener("dragover", (e) => e.preventDefault());
