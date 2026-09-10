@@ -44,6 +44,10 @@ const CLIMB_DELAY = 0.18; // seconds of pushing into a wall before the climb sta
 
 type Mantle = { from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; upY: number };
 
+/** A hard landing briefly ignores wish/jump rather than clearing them, so a
+ *  reassigned `wish` inside `step()` stays a harmless read-only zero. */
+const STUMBLE_WISH = new THREE.Vector3();
+
 export class PlayerController {
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
@@ -60,6 +64,10 @@ export class PlayerController {
   private pushT = 0;
   /** Set for one frame when a mantle starts (HUD / sound hook). */
   justMantled = false;
+  /** Seconds left of ignored/dampened input after a hard landing. Set by
+   *  `main.ts` off the same wasGrounded/vyBefore landing detection that
+   *  drives `sound.land`. */
+  stumbleT = 0;
   private sinceGrounded = 0;
   private vy = 0;
   private readonly tmp = new THREE.Vector3();
@@ -175,6 +183,13 @@ export class PlayerController {
   /** `wish` is the desired horizontal direction in world space (length ≤ 1). */
   step(dt: number, wish: THREE.Vector3, run: boolean, jump: boolean): void {
     this.justMantled = false;
+    if (this.stumbleT > 0) {
+      this.stumbleT = Math.max(0, this.stumbleT - dt);
+      // Stumbling: the fall wins the argument for a beat. Movement eases
+      // toward zero (not an instant stop) and jumping/climbing are out.
+      wish = STUMBLE_WISH;
+      jump = false;
+    }
     if (this.carriedAt) {
       // Carried: I am where my carrier's hands are. Physics is bypassed.
       const c = this.carriedAt;
@@ -295,6 +310,7 @@ export class PlayerController {
 
   teleport(p: THREE.Vector3): void {
     this.mantle = null;
+    this.stumbleT = 0;
     this.body.setTranslation({ x: p.x, y: p.y + HALF_HEIGHT + RADIUS, z: p.z }, true);
     this.body.setNextKinematicTranslation({ x: p.x, y: p.y + HALF_HEIGHT + RADIUS, z: p.z });
     this.vy = 0;

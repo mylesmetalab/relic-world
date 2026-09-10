@@ -560,7 +560,35 @@ async function boot(): Promise<void> {
         player.afterStep();
         acc -= STEP;
         if (player.justMantled) sound.mantle();
-        if (!wasGrounded && player.grounded && vyBefore < -3) sound.land(vyBefore);
+        if (!wasGrounded && player.grounded && vyBefore < -3) {
+          sound.land(vyBefore);
+          // Hard landing: a 30 m drop into a Cathedral vault is intended, but
+          // it should land with weight — a camera thump, a puff of ink chips
+          // at the landing point (the same chip system a dig throws), and a
+          // brief stumble where movement input is dampened. Scaled by how far
+          // past the "hard" threshold the fall speed got, so a small hop off
+          // a ledge stays silent.
+          const P = CFG.player;
+          if (-vyBefore > P.landHardSpeed) {
+            const k = Math.min(1, (-vyBefore - P.landHardSpeed) / 12);
+            cam.thump(P.landThumpMag * (0.4 + 0.6 * k));
+            digMark.burst(tmp.copy(player.position).setY(player.position.y + 0.05), Math.round(P.landChipCount * (0.5 + 0.5 * k)));
+            player.stumbleT = P.landStumbleDur * (0.6 + 0.4 * k);
+          }
+        }
+      }
+      // Physics escape: if the player ever ends up below every level's floor
+      // here (a fall through the world), teleport up to the nearest one
+      // rather than leaving them stuck under the terrain forever. Cheap
+      // analytic field reads, so just done every frame.
+      {
+        const px = player.position.x, pz = player.position.z, py = player.position.y;
+        let lowest = Math.min(terrain.surfaceAt(px, pz), terrain.floorAt(px, pz));
+        if (terrain.gallery(px, pz) > 0.5) lowest = Math.min(lowest, terrain.floor2At(px, pz));
+        if (py < lowest - CFG.player.groundEscapeMargin) {
+          const g = terrain.groundAt(px, pz, py);
+          player.teleport(new THREE.Vector3(px, g + 0.5, pz));
+        }
       }
     }
     if (input.once("KeyM")) sound.toggleMute();

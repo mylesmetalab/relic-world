@@ -93,6 +93,12 @@ the rock for you too, and what they push, you see move.
   pen jitter and press misregistration grow with depth, the ceiling's brush
   arcs pack tighter, and the bare-paper reveal dims — all driven by how far
   below the (undug) surface you are, tunable as `depthStrange` in the panel.
+- **Falls have weight.** A 30 m drop into a Cathedral vault is intended, and
+  lands like one: a camera thump, a puff of ink chips at your feet, and a
+  brief stumble where movement is ignored — a small hop off a ledge stays
+  quiet (the cutoff is `landHardSpeed` in the panel). If you ever end up
+  below every floor, you're teleported back up to the nearest one rather than
+  left stuck under the world.
 
 ## How it's built
 

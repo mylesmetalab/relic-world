@@ -92,6 +92,21 @@ export type Tunables = {
     /** 0 = ruled families, 1 = contour dashes. */
     hatchStyle: number;
   };
+  player: {
+    /** |vertical velocity| (m/s) above which a landing reads as "hard": a
+     *  camera thump, an ink-chip puff at the landing point, and a brief
+     *  no-input stumble — a gentle hop stays silent, a 30 m drop doesn't. */
+    landHardSpeed: number;
+    /** Seconds of ignored/dampened movement input after a hard landing. */
+    landStumbleDur: number;
+    /** Camera dip depth (metres) on a hard landing, scaled by how hard. */
+    landThumpMag: number;
+    /** Ink chips thrown at the landing point on a hard landing, scaled by how hard. */
+    landChipCount: number;
+    /** A physics escape: how far below every level's floor (metres) before
+     *  the player is teleported up to `terrain.groundAt`. */
+    groundEscapeMargin: number;
+  };
 };
 
 export const DEFAULTS: Tunables = {
@@ -100,6 +115,7 @@ export const DEFAULTS: Tunables = {
   press: { printScale: 0.6, misreg: 0.6, edgeW: 1.0, depthCut: 0.012, normalCut: 0.5, grain: 0.9, speck: 0.004, halftone: 0, halftoneScale: 4, halftoneAngle: 20, depthStrange: 1 },
   dig: { radius: 1.2, depth: 0.3, tunnelRadius: 1.2, rate: 5, reach: 4.5, stepUp: 1.3 },
   figure: { hull: 0.55, hatchRange: 0.5, black: 0.1, pitch: 8, nib: 0.75, rim: 0.4, fill: 0.3, stipple: 0.06, formFollow: 0.6, zoneSoft: 0.04, zoneJitter: 0.035, hiCut: 0.78, hatchStyle: 0 },
+  player: { landHardSpeed: 10, landStumbleDur: 0.4, landThumpMag: 0.35, landChipCount: 20, groundEscapeMargin: 4 },
 };
 
 function clone<T>(v: T): T {

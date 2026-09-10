@@ -15,6 +15,8 @@ const PITCH_MAX = 1.15; // looking down
 const BOOM = 4.6;
 const EYE = 1.55;
 const SHOULDER = 0.5;
+/** How long a landing thump takes to ease back out, in seconds. */
+const THUMP_DUR = 0.28;
 
 export class PlayerCamera {
   yaw = Math.PI; // facing -z → camera behind the figure looking +z... set by main
@@ -24,6 +26,9 @@ export class PlayerCamera {
   private readonly target = new THREE.Vector3();
   private readonly dir = new THREE.Vector3();
   private readonly pos = new THREE.Vector3();
+  private shakeT = 0;
+  private shakeMag = 0;
+  private readonly shakeOffset = new THREE.Vector3();
 
   constructor(readonly camera: THREE.PerspectiveCamera, private readonly ph: Physics) {}
 
@@ -40,9 +45,25 @@ export class PlayerCamera {
     return out.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
   }
 
+  /** Trigger a brief camera thump (a hard landing) — a quick downward dip
+   *  that eases back out over `THUMP_DUR`. `mag` in metres. */
+  thump(mag: number): void {
+    this.shakeMag = Math.max(this.shakeMag, mag);
+    this.shakeT = THUMP_DUR;
+  }
+
   update(feet: THREE.Vector3, dt: number, exclude: RAPIER.RigidBody): void {
+    if (this.shakeT > 0) {
+      this.shakeT = Math.max(0, this.shakeT - dt);
+      const t = this.shakeT / THUMP_DUR; // 1 → 0
+      const eased = t * t;
+      this.shakeOffset.set(0, -this.shakeMag * eased, 0);
+    } else {
+      this.shakeMag = 0;
+      this.shakeOffset.set(0, 0, 0);
+    }
     if (this.firstPerson) {
-      this.camera.position.set(feet.x, feet.y + EYE, feet.z);
+      this.camera.position.set(feet.x, feet.y + EYE, feet.z).add(this.shakeOffset);
       this.camera.rotation.set(0, 0, 0, "YXZ");
       this.camera.rotation.y = this.yaw;
       this.camera.rotation.x = -this.pitch;
@@ -60,7 +81,7 @@ export class PlayerCamera {
     // Snap in fast, ease back out.
     const k = want < this.dist ? 1 : Math.min(1, dt * 4);
     this.dist += (want - this.dist) * k;
-    this.pos.copy(this.target).addScaledVector(this.dir, this.dist);
+    this.pos.copy(this.target).addScaledVector(this.dir, this.dist).add(this.shakeOffset);
     this.camera.position.copy(this.pos);
     this.camera.lookAt(this.target);
   }

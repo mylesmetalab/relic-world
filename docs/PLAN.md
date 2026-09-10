@@ -272,6 +272,41 @@ does mean a single stationary column rarely reaches full breakthrough on its
 own; call it out if it feels wrong in play. Next up per the backlog: landing
 and falls.
 
+### Fourteenth pass (2026-09-10, latest)
+Landing and falls: a hard landing now reads with weight instead of just a
+sound. `main.ts`'s existing `wasGrounded`/`vyBefore` landing detection (the
+same one that already drove `sound.land`) gates a new effect on
+`-vyBefore > CFG.player.landHardSpeed` (default 10 m/s — a small hop stays
+silent): `PlayerCamera.thump` (a new shake offset in `src/player/camera.ts`,
+a quick downward dip that eases back out over 0.28 s), a puff of ink chips at
+the landing point via the existing `DigMark.burst` (the same chip system a
+dig throws), and `PlayerController.stumbleT` (a new field in
+`src/player/controller.ts` — while it counts down, `step()` substitutes a
+zero wish vector and forces `jump` false, so movement eases toward a stop and
+can't reinitiate jumping/climbing rather than being clipped instantly). All
+three scale 0-1 by how far past the threshold the fall speed got. Five new
+tunables (`landHardSpeed`, `landStumbleDur`, `landThumpMag`, `landChipCount`,
+`groundEscapeMargin`) in a new `player` section of `src/world/config.ts`,
+sliderized in `src/ui/tune.ts`. Also a physics-escape safety net: every frame
+(cheap analytic field reads), if the player's y is below every level's floor
+at their x/z by `groundEscapeMargin` (4 m), `main.ts` teleports them up to
+`terrain.groundAt` — the pre-existing "highest floor at or under y, falls
+back to the lowest cave floor" helper is exactly "nearest level" for a player
+who fell out the bottom. Verified at `?seed=7`: typecheck clean; found the
+deepest Cathedral vault in range (`floor` 1.51, `ceiling` 37.3, ~35.8 m of
+drop), teleported the player near its ceiling and pumped frames through the
+fall — landed at `vy` ≈ -35 m/s, read back `stumbleT = 0.4` and
+`cam.shakeMag = 0.35` (both saturated, since the fall speed was far past the
+threshold) the instant `grounded` flipped true, and a screenshot shows a
+scatter of ink chips at the figure's feet; confirmed the stumble actually
+blocks movement (position barely moved with `W` held for 10 frames inside
+the 0.4 s window, then moved normally once `stumbleT` hit 0); a small 0.6 m
+hop landed with `stumbleT`/`shakeMag` both staying 0, confirming the
+threshold gate. For the escape net: teleported the player 10 m below a
+vault's floor and pumped 3 frames — landed back on top of the floor
+(`groundAt` + 0.5), screenshotted standing on solid ground. Next up per the
+backlog: quality toggle for phones.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

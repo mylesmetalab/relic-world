@@ -19,6 +19,7 @@ const RANGES: Record<keyof Tunables, Record<string, Range>> = {
   press: { printScale: [0.2, 1, 0.05], misreg: [0, 3, 0.1], edgeW: [0.5, 3, 0.1], depthCut: [0.002, 0.05, 0.001], normalCut: [0.1, 1, 0.01], grain: [0, 1, 0.01], speck: [0, 0.02, 0.0005], halftone: [0, 1, 0.01], halftoneScale: [2, 24, 0.5], halftoneAngle: [0, 90, 1], depthStrange: [0, 2, 0.05] },
   dig: { radius: [0.6, 5, 0.1], depth: [0.1, 4, 0.05], tunnelRadius: [0.8, 6, 0.1], rate: [1, 20, 1], reach: [2, 12, 0.5], stepUp: [0.8, 2.2, 0.1] },
   figure: { hull: [0, 3, 0.05], hatchRange: [0.2, 0.95, 0.01], black: [0, 0.4, 0.005], pitch: [3, 16, 0.5], nib: [0.3, 2, 0.05], rim: [0, 1, 0.01], fill: [0, 1, 0.01], stipple: [0, 1, 0.01], formFollow: [0, 1, 0.01], zoneSoft: [0, 0.2, 0.005], zoneJitter: [0, 0.1, 0.005], hiCut: [0.3, 1, 0.01], hatchStyle: [0, 1, 1] },
+  player: { landHardSpeed: [4, 25, 0.5], landStumbleDur: [0, 1.2, 0.05], landThumpMag: [0, 1, 0.01], landChipCount: [4, 60, 1], groundEscapeMargin: [1, 15, 0.5] },
 };
 const PEN_RANGES: Record<string, Range> = {
   hatchRange: [0.2, 0.95, 0.01], black: [0, 0.8, 0.01], pitchScale: [0.4, 3, 0.05], nib: [0.3, 2, 0.05], cracks: [0, 1, 0.01], stipple: [0, 1, 0.01], hatchRot: [-1.6, 1.6, 0.05], formFollow: [0, 1, 0.01],
