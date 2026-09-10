@@ -38,6 +38,11 @@ export type Tunables = {
      *  seconds. World/shrine torches (spawned by chunk generation,
      *  `placed: false`) never expire regardless of this value. */
     torchLifeSec: number;
+    /** The wandering presence (brief 17), 0/1 — a kill switch independent of
+     *  the private/seeded-world gate (`!shared` in main.ts), so it can be
+     *  turned off without a redeploy. Only ever active when BOTH this is
+     *  truthy AND the world is private. */
+    presenceEnabled: number;
   };
   light: {
     localReach: number;
@@ -126,16 +131,35 @@ export type Tunables = {
      *  wheel-event shape. */
     trackpadSens: number;
   };
+  presence: {
+    /** Metres per second, drifting toward its next wander target. */
+    wanderSpeed: number;
+    /** Metres per second while fleeing an active light — faster than wander. */
+    fleeSpeed: number;
+    /** A light (mine, a peer's, or a standing torch) within this many metres
+     *  triggers fleeing, directly away from the nearest one. */
+    fleeRadius: number;
+    /** Seconds (average) between picking a new nearby wander target, or
+     *  sooner if it arrives first. */
+    retargetSec: number;
+    /** How far (metres) a newly picked wander target can be from the current
+     *  position. */
+    wanderRadius: number;
+    /** How close (metres) the LOCAL player must be, while it's unlit, to
+     *  hear its occasional sound cue. */
+    hearRadius: number;
+  };
 };
 
 export const DEFAULTS: Tunables = {
-  world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, climbSolidity: 0.85, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4, crust: 6, vaultRadius: 2.4, vaultRing: 1.0, vaultTorchRange: 3, propUpperDensity: 0.4, torchLifeSec: 180 },
+  world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, climbSolidity: 0.85, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4, crust: 6, vaultRadius: 2.4, vaultRing: 1.0, vaultTorchRange: 3, propUpperDensity: 0.4, torchLifeSec: 180, presenceEnabled: 1 },
   light: { localReach: 34, remoteReach: 22, inkStamp: 26, fogNear: 14, fogFar: 70, fog: 0.5, fogTone: 0.4, mottle: 0.3, shadowGamma: 1.25, ceilCell: 26, ceilArcSpacing: 1.6 },
   press: { printScale: 0.6, misreg: 0.6, edgeW: 1.0, depthCut: 0.012, normalCut: 0.5, grain: 0.9, speck: 0.004, halftone: 0, halftoneScale: 4, halftoneAngle: 20, depthStrange: 1 },
   dig: { radius: 1.2, depth: 0.3, tunnelRadius: 1.2, rate: 5, reach: 4.5, stepUp: 1.3 },
   figure: { hull: 0.55, hatchRange: 0.5, black: 0.1, pitch: 8, nib: 0.75, rim: 0.4, fill: 0.3, stipple: 0.06, formFollow: 0.6, zoneSoft: 0.04, zoneJitter: 0.035, hiCut: 0.78, hatchStyle: 0 },
   player: { landHardSpeed: 10, landStumbleDur: 0.4, landThumpMag: 0.35, landChipCount: 20, groundEscapeMargin: 4 },
   controls: { mouseSens: 1.0, trackpadSens: 1.6 },
+  presence: { wanderSpeed: 1.0, fleeSpeed: 3.2, fleeRadius: 12, retargetSec: 6, wanderRadius: 10, hearRadius: 18 },
 };
 
 function clone<T>(v: T): T {

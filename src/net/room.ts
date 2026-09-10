@@ -38,6 +38,10 @@ export type Peer = { id: string; state: PeerState; lastAt: number };
  *  is then how many metres the ceiling rose). */
 export type DigMsg = { l: number; x: number; z: number; r: number; d: number; t?: number; u?: 1 };
 export type TorchMsg = { id: string; p: [number, number, number] };
+/** The wandering presence (brief 17): position + whether it's currently
+ *  fleeing, broadcast only by whichever client currently owns its
+ *  simulation (private/seeded worlds only — see the gate in main.ts). */
+export type PresenceMsg = { p: [number, number, number]; f: 0 | 1 };
 
 const ADJECTIVES = ["Hooded", "Quiet", "Ashen", "Sly", "Grim", "Amber", "Lucky", "Wandering", "Pale", "Bold", "Stony", "Feral"];
 
@@ -71,10 +75,12 @@ export class Net {
   private readonly dig;
   private readonly torches;
   private readonly collect;
+  private readonly presence;
   onProps: ((states: PropState[], peerId: string) => void) | null = null;
   onDig: ((d: DigMsg, peerId: string) => void) | null = null;
   onTorches: ((list: TorchMsg[], peerId: string) => void) | null = null;
   onCollect: ((id: string, peerId: string) => void) | null = null;
+  onPresence: ((m: PresenceMsg, peerId: string) => void) | null = null;
   private readonly grabP;
   private readonly throwP;
   /** Someone picked me up (peerId is the carrier). */
@@ -124,6 +130,8 @@ export class Net {
     this.torches.onMessage = (data, ctx) => this.onTorches?.(data, ctx.peerId);
     this.collect = this.room.makeAction<{ k: string }>("collect");
     this.collect.onMessage = (data, ctx) => this.onCollect?.(data.k, ctx.peerId);
+    this.presence = this.room.makeAction<PresenceMsg>("presence");
+    this.presence.onMessage = (data, ctx) => this.onPresence?.(data, ctx.peerId);
     this.grabP = this.room.makeAction<{ t: string }>("grabP");
     this.grabP.onMessage = (data, ctx) => { if (data.t === selfId) this.onGrabbed?.(ctx.peerId); };
     this.throwP = this.room.makeAction<{ t: string; v: [number, number, number] }>("throwP");
@@ -166,6 +174,9 @@ export class Net {
   }
   sendCollect(k: string): void {
     if (this.peers.size) void this.collect.send({ k }).catch(() => {});
+  }
+  sendPresence(m: PresenceMsg): void {
+    if (this.peers.size) void this.presence.send(m).catch(() => {});
   }
   sendGrabPlayer(t: string): void {
     void this.grabP.send({ t }, { targets: t } as never).catch(() => {});

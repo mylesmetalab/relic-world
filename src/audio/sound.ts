@@ -123,6 +123,12 @@ export class Sound {
     this.burst(650 * hi, 1.0, 0.13, 0.3);
     this.burst(2600, 0.7, 0.18, 0.12, "highpass");
   }
+  /** The wandering presence, near but unlit: a soft, one-shot low creak —
+   *  occasional (main.ts gates the cadence), never a sustained drone. */
+  presence(): void {
+    this.tone(150, 0.55, 0.05, "sine");
+    this.burst(220, 2.4, 0.45, 0.05, "lowpass");
+  }
   blip(): void {
     this.tone(880, 0.09, 0.12);
     setTimeout(() => this.tone(1320, 0.08, 0.1), 70);

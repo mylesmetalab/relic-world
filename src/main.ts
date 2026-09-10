@@ -13,7 +13,8 @@ import { availableCharacters, Figure, normaliseCharacter, type CharacterId } fro
 import { Grab } from "./player/grab";
 import { DigMark, type DigPlan } from "./player/digmark";
 import { Sound } from "./audio/sound";
-import { Net, type DigMsg } from "./net/room";
+import { Net, type DigMsg, type PresenceMsg } from "./net/room";
+import { Presence, findPresenceSpawn } from "./world/presence";
 import { Voice } from "./net/voice";
 import { PhotoMode } from "./ui/photo";
 import { Chat } from "./ui/chat";
@@ -141,6 +142,23 @@ async function boot(): Promise<void> {
     voiceBtn.classList.toggle("on", on);
   };
   voiceBtn.addEventListener("click", (e) => { e.stopPropagation(); void voice.toggle(); });
+
+  // ── A wandering presence (brief 17): private/seeded worlds only, and a
+  // CFG kill switch on top of that, so it can be turned off without a
+  // redeploy even there. `shared` is only ever true for the one default
+  // rolling world — a private `?seed=` (or `?room=`) world is everything
+  // else, which is exactly where this is allowed to exist. ────────────────
+  const presence = !shared && CFG.world.presenceEnabled
+    ? new Presence(p, terrain, seed, findPresenceSpawn(terrain, seed))
+    : null;
+  let presenceTarget: PresenceMsg | null = null;
+  if (presence) net.onPresence = (m) => { presenceTarget = m; };
+  const isPresenceOwner = (): boolean => {
+    for (const id of remotes.keys()) if (id < net.selfId) return false;
+    return true;
+  };
+  let presenceSendT = 0;
+  let presenceSoundT = 2 + Math.random() * 4;
 
   // ── Props: ownership, digging, torches, collecting ──────────────────
   const isOwner = (x: number, z: number): boolean => {
@@ -734,6 +752,33 @@ async function boot(): Promise<void> {
       p.torches.push(t);
       p.inkMap.stamp(t.position.x, t.position.z, TORCH_REACH * 0.8);
     }
+    // ── The wandering presence: one client (the lexicographically-smallest
+    // id among self + connected peers, same tie-break spirit as `isOwner`'s
+    // nearest-player rule for props) simulates wander/flee against this
+    // frame's already-built light list; everyone else just eases toward the
+    // broadcast position — the "nearest player simulates, everyone else
+    // follows" model `Props` already uses, for one shared entity instead of
+    // many positioned ones. ────────────────────────────────────────────
+    if (presence) {
+      if (isPresenceOwner()) {
+        presence.simulate(dt, p.torches);
+        presenceSendT += dt;
+        if (presenceSendT >= (presence.fleeing ? 0.6 : 4)) {
+          presenceSendT = 0;
+          net.sendPresence({ p: [presence.position.x, presence.position.y, presence.position.z], f: presence.fleeing ? 1 : 0 });
+        }
+      } else if (presenceTarget) {
+        presence.applyRemote(presenceTarget, k);
+      }
+      presence.render(p.torches);
+      if (!presence.group.visible) {
+        presenceSoundT -= dt;
+        if (presenceSoundT <= 0 && presence.position.distanceTo(player.position) < CFG.presence.hearRadius) {
+          sound.presence();
+          presenceSoundT = 6 + Math.random() * 8;
+        }
+      }
+    }
     voice.update(player.position, peerPositions);
     lastSpeed = speed;
 
@@ -799,6 +844,7 @@ async function boot(): Promise<void> {
 
   (window as unknown as { __world: unknown }).__world = {
     seed, shared, player, cam, terrain, chunks, pipeline: p, figure, net, remotes, photo, sound, isOwner, grab, tune, map, voice, input, cfg: CFG,
+    presence, isPresenceOwner,
     quality, qualityPreset,
     pump, applyDig, digAtAim, spawnRelic,
     grabPlayer: (id: string) => { carrying = id; net.sendGrabPlayer(id); },

@@ -570,6 +570,82 @@ one biome and denied in the other" harder to catch mid-walk than expected,
 so the proof leans on the measured value crossing the *global* default in
 each direction instead, which is the same thing the brief itself asks for.
 
+### Twenty-second pass (2026-09-10, latest)
+Brief 17, a wandering presence — the largest, least-precedented brief in the
+backlog (a genuine new entity type, not an extension of something existing),
+decided directly with Myles: non-hostile, no fail state, no combat, no
+damage/knockback/health system, gated to private/seeded worlds only. New
+module `src/world/presence.ts`: `Presence` is a single global entity (a
+deliberate simplification of "one per room" — see below), built from the
+same stacked `rockGeometry` cones every golem uses but its own asymmetric,
+shoulderless/armless/headless silhouette so it can never read as a mis-worn
+player skin, rendered with the same `makeFigureMaterial`/hull-outline
+technique as everything else. It has no Rapier body at all — walking into
+it does nothing because there is nothing for the player's collider to hit,
+not a special case. Wander: drifts toward a randomly re-picked nearby point
+(`CFG.presence.wanderRadius`/`retargetSec`), sampling `terrain.isOpen` to
+loosely avoid walls the way `scatterRocks` does, no pathfinding. Flee: any
+active light in the current frame's already-built `p.torches` list (mine +
+peers' + standing torches) within `CFG.presence.fleeRadius` makes it
+accelerate directly away at `fleeSpeed` (faster than `wanderSpeed`).
+"Half-seen": rendered (`group.visible`) only while at least one of that same
+light list actually reaches its position — a hard on/off each frame rather
+than a persistent per-vertex ink map (which doesn't apply to something that
+moves), the simplification the brief itself explicitly invited. Sync: a new
+`PresenceMsg` (`src/net/room.ts`, mirrors `TorchMsg`) carries position +
+fleeing; ownership is "my id is the lexicographically smallest among self +
+connected `remotes`" (the brief's own suggested equivalent to `isOwner`'s
+nearest-player tie-break for one shared entity), recomputed fresh every
+frame from the live `remotes` map so a departing owner needs no special
+handling — whoever's left just becomes the smallest next frame. The owner
+broadcasts on the torch cadence (4 s) or faster while fleeing (0.6 s) for
+responsiveness; everyone else eases toward the last snapshot with the same
+lerp constant remote players already use. Gate: `!shared && CFG.world.
+presenceEnabled` (a new 0/1 tunable, default 1, sliderized in `src/ui/
+tune.ts`) — `shared` is `main.ts`'s existing `seedParam == null` check, true
+only for the one default rolling world. A new `presence` tunables section
+(`wanderSpeed`, `fleeSpeed`, `fleeRadius`, `retargetSec`, `wanderRadius`,
+`hearRadius`) landed in `src/world/config.ts`/`tune.ts`. Shipped the optional
+sound cue too: `Sound.presence()` (`src/audio/sound.ts`), a soft one-shot
+low tone + filtered-noise burst — not a drone — gated in `main.ts` to only
+fire while unlit, within `hearRadius` of the local player, on a randomized
+6–14 s cooldown.
+
+One deliberate simplification from the full spec, stated up front rather
+than discovered as a gap: "one per room" is shipped as one presence for the
+whole world, not one spawned per chunk/room with per-instance ownership —
+the brief's own ownership language ("since this is a single shared entity,
+not a per-position prop") reads as inviting exactly this simpler shape, and
+a single global entity already delivers the intended feeling ("not being
+alone") without the added complexity of per-room spawn/despawn as chunks
+stream in and out. It's confined to the lower cave (level 2, via
+`terrain.isOpen`/`floorAt`) rather than wandering across all three levels,
+for the same reason. Both are called out here as scope, not defects.
+
+Verified at `?seed=7`: typecheck clean. Gate — loaded plain `http://
+localhost:5300/` (no `?seed=`) and confirmed `__world.presence` is `null`
+even with `presenceEnabled: 1`; loaded `?seed=7` and confirmed it exists.
+Wander — sampled `presence.position` across 6 batches of 60 pumped frames
+and saw it drift continuously. Flee — teleported the player's torch within
+range and watched `fleeing` flip true, `group.visible` flip true, and
+position measurably recede (distance to player grew frame over frame);
+screenshotted the moment (a small jagged grey rock-stack, distinct from the
+golem silhouettes, lit by the player's own torch) — moving away again
+confirmed it fades back to `visible: false`. Walked the player directly onto
+its position for 20 pumped frames with `console.error` intercepted: no
+error, player physics unaffected. `?cfg=` with `world.presenceEnabled: 0` on
+a `?seed=7` world confirmed `__world.presence` is `null`. **Live two-tab
+test** (this session's sandbox could reach the Nostr relay, unlike several
+recent prior passes — confirmed real peers in `__world.net.peers` on both
+sides within ~3 s): the lexicographically-smaller selfId's tab read
+`isPresenceOwner() === true` and the other `false`, matching the intended
+tie-break exactly; the non-owner tab's `presence.position` converged onto
+the owner's broadcast position over repeated `pump()` calls, and flipping
+the owner's presence to fleeing (via a nearby torch) propagated to the
+non-owner tab's `presence.fleeing` within one broadcast interval — a genuine
+live confirmation of both the ownership tie-break and the net message path,
+not the direct-invocation fallback several earlier passes had to use.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

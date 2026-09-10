@@ -123,6 +123,20 @@ same as always.
   quiet (the cutoff is `landHardSpeed` in the panel). If you ever end up
   below every floor, you're teleported back up to the nearest one rather than
   left stuck under the world.
+- **You're not always alone down there — in private worlds.** A single
+  wandering presence, a jagged rock-stack silhouette with no shoulders, arms
+  or head (so it never reads as a mis-worn player skin), drifts on its own
+  slow business. It has no health, no attack and no collider at all —
+  walking into it does nothing. Bring a lit torch near it and it flees,
+  faster than its normal drift; step away and it fades back to unseen — it
+  only renders while an active light actually reaches it, the same
+  "half-seen" feeling the rock's ink map gives everything else, approximated
+  for something that moves. One connected player simulates it at a time (the
+  lowest peer id, same tie-break spirit as a shared prop's nearest-player
+  rule) and broadcasts it to the rest. Private/seeded worlds only
+  (`?seed=`/`?room=`) — off in the shared rolling world everyone lands in by
+  default — and behind its own kill switch (`presenceEnabled` in the panel)
+  on top of that.
 
 ## How it's built
 
@@ -146,6 +160,11 @@ same as always.
   WebRTC; state at 12 Hz, remote figures interpolated; a peer silent for more
   than 8 s (a closed tab or dropped connection that never sent a clean leave)
   is swept from the room the same way a normal departure is.
+- `src/world/presence.ts` — the wandering presence: its own procedural
+  silhouette (the same stacked-cone rock technique as the golems, deliberately
+  not one of their kinds), wander/flee movement sampling `terrain.solidity`
+  the way rock scatter avoids walls, and a small net message (`PresenceMsg`
+  in `src/net/room.ts`) the current owner broadcasts.
 - `src/ui/photo.ts` — photo mode; also queues up to 3 framed stills into a
   composed comic page (24 px gutters, one wide panel + two small, a
   paper/ink caption strip) exported as one PNG.

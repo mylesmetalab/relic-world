@@ -669,6 +669,41 @@ ownership tie-break) and the other sees it move via the new net message —
 if the sandbox's WebSocket relay is blocked (as in recent prior passes),
 verify the ownership/message-passing logic directly instead and say so.
 
+**Built (2026-09-10):** shipped close to spec, with one deliberate
+simplification called out up front: "one per room" landed as one presence
+for the whole world (not one spawned per chunk with per-instance ownership)
+— the brief's own framing ("since this is a single shared entity, not a
+per-position prop") reads as inviting exactly this, and it delivers the same
+"not alone" feeling without per-room spawn/despawn complexity as chunks
+stream. It's also confined to the lower cave (level 2) rather than all three
+levels, for the same reason. New `src/world/presence.ts`: its own
+stacked-`rockGeometry` silhouette (the golems' technique, not their model
+data or a `GolemKind`), no Rapier body at all (walking into it does nothing
+because there's nothing to collide with), wander/flee sampling
+`terrain.isOpen` the way `scatterRocks` avoids walls, and "half-seen" done
+as a hard per-frame visibility gate against the same `p.torches` list
+`main.ts` already builds (not a persistent ink map, which doesn't apply to
+something that moves). Sync: a new `PresenceMsg` (`src/net/room.ts`) sent by
+whichever client's id is lexicographically smallest among itself + connected
+`remotes` — recomputed fresh every frame, so a departing owner needs no
+special handling. Gate: `!shared && CFG.world.presenceEnabled` (new 0/1
+tunable, default 1). Shipped the optional sound cue too (`Sound.presence()`
+in `src/audio/sound.ts`, a one-shot tone + filtered burst on a randomized
+cooldown while unlit and nearby — not a drone). Verified at `?seed=7`:
+typecheck clean; confirmed `__world.presence` is `null` on the shared world
+and with `presenceEnabled: 0` even on `?seed=7`, and non-null otherwise;
+watched it wander over pumped frames, flee and become visible the instant a
+torch came within range (screenshotted), and fade back to invisible on
+retreat; walked directly onto it with `console.error` intercepted — no
+error, no effect on player physics. This session's sandbox could actually
+reach the Nostr signalling relay (unlike several recent prior passes), so
+the ownership tie-break and net sync were confirmed **live across two real
+tabs**, not by direct invocation: the lower-selfId tab read
+`isPresenceOwner() === true`, the other `false`; the non-owner's
+`presence.position` converged onto the owner's broadcast, and flipping the
+owner to fleeing propagated to the non-owner within one broadcast interval.
+See `docs/PLAN.md`'s twenty-second pass for full detail.
+
 ---
 
 ## How to work here
