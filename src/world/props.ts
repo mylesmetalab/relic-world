@@ -216,12 +216,16 @@ export class Props {
     return [...this.all].filter((p) => p.dynamic);
   }
 
-  /** Drop a golden relic right here (debug / spawn button). */
-  spawnRelicAt(x: number, z: number): void {
+  /** Drop a golden relic right here (debug / spawn button). Seats on
+   *  `level` (the player's own level — surface, gallery or lower cave), not
+   *  always the lower cave: spawning it under a player standing on the
+   *  surface used to seat it at the lower cave's floor, many metres below
+   *  and out of reach. */
+  spawnRelicAt(x: number, z: number, level: Level): void {
     const key = `spawn:${Date.now()}`;
     const cp: ChunkProps = { key, props: [], statics: [], alive: true, torches: [], vaults: [] };
     const kind = GOLEM_KINDS[Math.floor(Math.random() * GOLEM_KINDS.length)]!;
-    this.golemRelic(cp, kind, Math.floor(Math.random() * 1e6), x, z, Math.random() * Math.PI * 2, this.terrain.floorAt(x, z) - 0.5);
+    this.golemRelic(cp, kind, Math.floor(Math.random() * 1e6), x, z, Math.random() * Math.PI * 2, this.terrain.levelAt(level, x, z) - 0.5);
     this.loose.push(cp);
   }
   private readonly loose: ChunkProps[] = [];

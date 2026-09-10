@@ -376,7 +376,8 @@ async function boot(): Promise<void> {
   const map = new PaperMap(p.inkMap);
   const spawnRelic = () => {
     const x = player.position.x + fwd.x * 2.2, z = player.position.z + fwd.z * 2.2;
-    chunks.props.spawnRelicAt(x, z);
+    const level = terrain.levelOf(player.position.x, player.position.z, player.position.y);
+    chunks.props.spawnRelicAt(x, z, level);
   };
   const tune = new Tune({
     onRender: () => applyConfig(p),

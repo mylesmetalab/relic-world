@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import type { Physics } from "../physics/world";
-import { rayDistance } from "../physics/world";
+import { sweepDistance } from "../physics/world";
 
 /**
  * Third-person boom that shortens when rock gets between it and the player,
@@ -76,7 +76,10 @@ export class PlayerCamera {
     const cp = Math.cos(this.pitch);
     this.dir.set(Math.sin(this.yaw) * cp, Math.sin(this.pitch), Math.cos(this.yaw) * cp).normalize();
     // Shorten on rock, with a small margin so the near plane never clips.
-    const hit = rayDistance(this.ph, this.target, this.dir, BOOM, exclude);
+    // A swept ball, not a zero-width ray: a thin ray can clear a corner or a
+    // shallow wall that the camera's actual near-plane/frustum would still
+    // poke through as you rotate, leaving you looking through geometry.
+    const hit = sweepDistance(this.ph, this.target, this.dir, 0.3, BOOM, exclude);
     const want = hit != null ? Math.max(0.6, hit - 0.3) : BOOM;
     // Snap in fast, ease back out.
     const k = want < this.dist ? 1 : Math.min(1, dt * 4);

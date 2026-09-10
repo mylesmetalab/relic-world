@@ -93,3 +93,22 @@ export function rayDistance(
   const h = hit as unknown as { timeOfImpact?: number; toi?: number };
   return h.timeOfImpact ?? h.toi ?? null;
 }
+
+/** Distance along `dir` (unit) from `origin` to the first collider a ball of
+ *  `radius` would touch sweeping that way, or null. Unlike `rayDistance`
+ *  (a zero-width line), this catches geometry the exact ray line clears but
+ *  a real camera's near-plane/frustum would still clip — used for the
+ *  third-person boom (`player/camera.ts`) so rotating near a corner or a
+ *  shallow wall doesn't leave the camera poking through it. */
+export function sweepDistance(
+  ph: Physics, origin: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number },
+  radius: number, maxDist: number, exclude?: RAPIER.RigidBody, predicate?: (collider: RAPIER.Collider) => boolean,
+): number | null {
+  const shape = new ph.R.Ball(radius);
+  const hit = ph.world.castShape(
+    origin, { x: 0, y: 0, z: 0, w: 1 }, dir, shape, 0, maxDist, true,
+    undefined, undefined, undefined, exclude, predicate,
+  );
+  if (!hit) return null;
+  return hit.time_of_impact;
+}

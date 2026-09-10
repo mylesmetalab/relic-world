@@ -769,6 +769,49 @@ never crossed the threshold, and B walking at RUN speed (7.2 m/s, launched
 and pumped for real, not simulated) all the way to 0.94 m from A left A's
 `stumbleT` at 0 throughout.
 
+### Twenty-fifth pass (2026-09-10, latest): two real bugs found by live playtesting
+Myles reported three things while actually playing: `G` (spawn relic)
+"sometimes does, sometimes doesn't," `F` (grab) "never works," and the
+camera "often ends up looking through walls" as he rotated it. Investigated
+directly rather than guessing, and confirmed two distinct, real bugs:
+
+- **`spawnRelicAt` ignored the player's actual level.** It always seated a
+  spawned relic at the LOWER CAVE's floor height (`terrain.floorAt`)
+  regardless of where the player stood — since players start on the
+  surface, pressing `G` there dropped the relic ~11 m below and dozens of
+  metres away, invisible and unreachable; `F` then "never worked" because
+  there was nothing nearby to grab. Only worked when already deep in the
+  lower cave, matching "sometimes." Fixed: `spawnRelic()` (`src/main.ts`)
+  now reads the player's own level (`terrain.levelOf`) and passes it to
+  `spawnRelicAt(x, z, level)` (`src/world/props.ts`), which seats on
+  `terrain.levelAt(level, x, z)` instead. Verified: a fresh spawn now lands
+  ~2.2 m in front of the player at their own height (was an 11 m vertical
+  gap before), and grabbing it works — confirmed by aiming precisely at the
+  relic's real position and reading back a correct `fromCollider` match
+  (the raycast/collider system itself was never at fault, only the
+  placement).
+- **The third-person boom used a zero-width raycast to shorten on rock**
+  (`src/player/camera.ts`) — a thin ray can clear a corner or a shallow
+  wall that the camera's actual near-plane/frustum still pokes through as
+  you rotate, exactly matching "looking through walls." Fixed with a new
+  `sweepDistance` helper (`src/physics/world.ts`, `RAPIER.World.castShape`
+  with a small ball in place of a ray) and swapped the boom to use it.
+  Verified head-to-head, not just by feel: same test position, a full yaw
+  sweep, old ray-based code vs. the new sweep — the new code pulled the
+  camera closer at every single angle tested, up to 1.36 m closer at the
+  worst one, proving the old code really was letting the camera sit
+  inside/behind geometry the ray missed.
+- Also confirmed, not changed: hold-to-dig already exists (`input.leftDown`
+  + a `digT`/`CFG.dig.rate` accumulator in `main.ts`) — holding the mouse
+  button already digs continuously, no feature was missing there. And the
+  paper-speck/grain effect Myles asked about is intentionally screen/print-
+  space, not per-object — the press pass is explicitly a fixed-density print
+  simulation over the whole frame by design (see "Why this shape" above),
+  not a rendering bug, though it's a known tradeoff the project's own
+  "known risks" section already calls out.
+- Typecheck clean throughout; both fixes pushed directly to `origin/main`
+  and republished (this changes visible behavior on the live build).
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

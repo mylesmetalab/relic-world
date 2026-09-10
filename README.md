@@ -167,7 +167,9 @@ same as always.
 - `src/player/` — Rapier kinematic controller with auto-step and a ledge
   grab / mantle state machine (its wall/ledge raycasts skip every dynamic
   rigid body, terrain and statics only, so a pushable prop is never
-  mistaken for a climbable wall); third-person boom that shortens on rock;
+  mistaken for a climbable wall); third-person boom that shortens on rock via
+  a swept-ball cast, not a zero-width ray, so a corner or shallow wall can't
+  poke through the camera's near plane as you rotate;
   figures as packed miniatures or procedural golems, each with its own inks;
   every figure but the Hound swings two arms opposite its legs, reaches
   forward holding a prop or carrying another player, and flails when it is
