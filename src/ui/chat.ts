@@ -15,6 +15,8 @@ export class Chat {
   private readonly input: HTMLInputElement;
   private readonly layer: HTMLDivElement;
   private readonly els = new Map<string, HTMLDivElement>();
+  private readonly toastEl: HTMLDivElement;
+  private toastUntil = 0;
   /** My current bubble (draft or sent), or null. */
   mine: Bubble | null = null;
   open = false;
@@ -22,6 +24,7 @@ export class Chat {
   constructor(private readonly camera: THREE.Camera, private readonly canvas: HTMLCanvasElement) {
     this.input = document.getElementById("chat") as HTMLInputElement;
     this.layer = document.getElementById("bubbles") as HTMLDivElement;
+    this.toastEl = document.getElementById("toast") as HTMLDivElement;
     this.input.addEventListener("input", () => {
       const t = this.input.value.slice(0, 120);
       this.mine = t ? { text: t, until: Infinity, typing: true } : null;
@@ -58,6 +61,14 @@ export class Chat {
     this.input.value = "";
     this.input.blur();
     this.canvas.focus();
+  }
+
+  /** A brief chat-bubble-sized notice not tied to any head, e.g. when the
+   *  victim of a grab gets "Stony-13 picked you up". */
+  toast(text: string, ms = 2400): void {
+    this.toastEl.textContent = text;
+    this.toastEl.hidden = false;
+    this.toastUntil = performance.now() + ms;
   }
 
   /** The text peers should see right now (draft gets a caret). */
@@ -98,5 +109,9 @@ export class Chat {
       }
     }
     if (this.mine && !this.mine.typing && performance.now() >= this.mine.until) this.mine = null;
+    if (this.toastUntil && performance.now() >= this.toastUntil) {
+      this.toastEl.hidden = true;
+      this.toastUntil = 0;
+    }
   }
 }

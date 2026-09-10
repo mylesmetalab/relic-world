@@ -110,6 +110,19 @@ carried. Remote figures pick up the same flag from a new `ho` (holding a
 prop) bit on `PeerState`. Next up per the backlog: show-who-you-can-pick-up
 outline, two-torch doors.
 
+### Seventh pass (2026-09-10, later)
+Show who you can pick up: `targetPlayer` now drives the same inverted-hull
+white outline props get (`Grab.showPlayerTarget`, a second outline mesh in
+`src/player/grab.ts` sharing the prop outline's shader and paper-white ink,
+matrix-copied each frame from the target's `figure.hull`), so "F to pick up"
+is seen on the other player's body, not just read off the HUD. The victim of
+a grab now also gets a brief chat-bubble-sized toast ("Stony-13 picked you
+up") — a new `Chat.toast()` and `#toast` element in `src/ui/chat.ts` /
+`index.html`, fired from `net.onGrabbed`. Verified across two tabs: the
+outline tracks the targeted remote figure and the toast lands on the victim's
+screen the moment `grabPlayer` fires. Next up per the backlog: two-torch
+doors.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

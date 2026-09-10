@@ -23,7 +23,7 @@ Click to take the mouse.
 | **V** | first ↔ third person |
 | **C** / **⇧C** | change character — nine things the cave grew: Cairn, Shard, Menhir, Spire, Dolmen, Castle, Totem, Wisp, Hound (the STL miniatures Bast, Rook and Cam join the cast via a toggle in the tuning panel) |
 | **Q / E** | your figure's ink colorway |
-| **F** / **click** | grab the prop under the cursor (white outline, the cursor fills in) · throw it along your aim — the dashed arc and landing ring show exactly where it goes · with empty hands, click **digs** |
+| **F** / **click** | grab the prop — or the player — under the cursor (both get the same white outline, the cursor fills in) · throw along your aim — the dashed arc and landing ring show exactly where a prop goes · with empty hands, click **digs** |
 | **X** / **G** | plant a torch that lights and prints the rock around it · spawn a relic in front of you |
 | **Tab** | the paper map — the ink map itself, printed in as you explore, with players as dots |
 | **Enter** | chat — what you type streams above your figure as you type; Enter sends, Esc cancels |
@@ -62,6 +62,10 @@ the rock for you too, and what they push, you see move.
   statues on plinths are dynamic bodies at rock density; walk into them and
   they slide and topple. The nearest player simulates a prop and everyone
   else follows, so a shove is shared.
+- **You can pick each other up.** Aim at another player within reach and
+  they get the same white outline a prop does — "F to pick up" is something
+  you see, not just read. The one grabbed gets a chat-bubble-sized toast
+  ("Stony-13 picked you up") and flails until thrown or set down.
 - **It sounds like paper and rock.** Everything is synthesized: footfalls, jump and land, knocks scaled by impact, a press roller
   that hums while new rock prints under your torch, and a blip when someone
   starts talking.

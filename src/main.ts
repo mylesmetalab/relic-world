@@ -202,6 +202,7 @@ async function boot(): Promise<void> {
     player.carriedAt = player.position.clone();
     figure.flail = true;
     if (grab.held) grab.grabOrDrop(player.velocity); // drop whatever I held
+    chat.toast(`${net.peers.get(carrier)?.state.n ?? "someone"} picked you up`);
   };
   net.onThrown = (v) => {
     carriedBy = null;
@@ -541,6 +542,7 @@ async function boot(): Promise<void> {
         if (perp < best && r.pos.distanceTo(chest) <= PLAYER_REACH) { best = perp; targetPlayer = id; }
       }
     }
+    grab.showPlayerTarget(targetPlayer ? remotes.get(targetPlayer)!.figure.hull : null);
     aimEl.classList.toggle("hot", !!grab.target || !!targetPlayer);
     aimEl.classList.toggle("hold", !!grab.held || !!carrying);
     // With empty hands and nothing grabbable under the cursor, show what a click cuts.

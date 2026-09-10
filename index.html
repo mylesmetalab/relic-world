@@ -48,6 +48,8 @@
       #bubbles { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
       .bubble { position: absolute; transform: translate(-50%, -100%); max-width: 260px; padding: 6px 10px; background: #e8e4d0; color: #0a0a12; font: 13px/1.35 ui-monospace, Menlo, monospace; border: 2px solid #0a0a12; box-shadow: 3px 3px 0 #0a0a12; word-wrap: break-word; white-space: pre-wrap; }
       .bubble::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 10px; height: 10px; background: #e8e4d0; border-right: 2px solid #0a0a12; border-bottom: 2px solid #0a0a12; transform: translateX(-50%) rotate(45deg); }
+      #toast { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); max-width: 260px; padding: 6px 10px; background: #e8e4d0; color: #0a0a12; font: 13px/1.35 ui-monospace, Menlo, monospace; border: 2px solid #0a0a12; box-shadow: 3px 3px 0 #0a0a12; text-align: center; pointer-events: none; }
+      #toast[hidden] { display: none; }
       #photo { position: fixed; right: 12px; top: 12px; width: 240px; padding: 12px 14px; background: rgba(10,10,18,0.86); border: 1px solid rgba(232,228,208,0.35); color: #e8e4d0; font: 12px/1.6 ui-monospace, Menlo, monospace; }
       #photo h2 { margin: 0 0 8px; font-size: 13px; color: #f2f542; }
       #photo h2 .k { float: right; color: #e8e4d0; opacity: 0.6; font-weight: normal; }
@@ -79,6 +81,7 @@
   <body>
     <canvas id="view" tabindex="0"></canvas>
     <div id="bubbles"></div>
+    <div id="toast" hidden></div>
     <div id="aim"></div>
     <div id="stamina"><i></i></div>
     <div id="hud"></div>

@@ -26,6 +26,8 @@ export class Grab {
   held: Prop | null = null;
   private readonly outline: THREE.Mesh;
   private readonly outlineMat: THREE.ShaderMaterial;
+  private readonly playerOutline: THREE.Mesh;
+  private readonly playerOutlineMat: THREE.ShaderMaterial;
   private readonly tether: THREE.Line;
   private readonly arc: THREE.Line;
   private readonly ring: THREE.Mesh;
@@ -50,6 +52,20 @@ export class Grab {
     this.outline.visible = false;
     p.scene.add(this.outline);
     p.ndHidden.add(this.outline);
+
+    // Same inverted-hull look, on whichever remote player is under the
+    // crosshair and in reach — so "F to pick up" is seen, not just read.
+    this.playerOutlineMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms: { uThick: { value: 1.6 }, uInk: { value: new THREE.Color(PAPER) } },
+      vertexShader: HULL_VERTEX,
+      fragmentShader: HULL_FRAGMENT,
+      depthTest: true,
+    });
+    this.playerOutline = new THREE.Mesh(new THREE.BufferGeometry(), this.playerOutlineMat);
+    this.playerOutline.visible = false;
+    p.scene.add(this.playerOutline);
+    p.ndHidden.add(this.playerOutline);
 
     const lineMat = new THREE.LineBasicMaterial({ color: PAPER, transparent: true, opacity: 0.9 });
     this.tether = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), lineMat);
@@ -133,6 +149,21 @@ export class Grab {
     this.holdPoint.copy(chest).addScaledVector(forward, 1.15);
     this.holdPoint.y += 0.1;
     this.held.body.setNextKinematicTranslation({ x: this.holdPoint.x, y: this.holdPoint.y, z: this.holdPoint.z });
+  }
+
+  /** Per frame: white-outline a remote player's body hull while they are the
+   *  pick-up target (main.ts passes `remotes.get(targetPlayer).figure.hull`,
+   *  or null once nobody's targeted / hands are full). */
+  showPlayerTarget(hull: THREE.Mesh | null): void {
+    if (!hull) {
+      this.playerOutline.visible = false;
+      return;
+    }
+    if (this.playerOutline.geometry !== hull.geometry) this.playerOutline.geometry = hull.geometry;
+    hull.updateWorldMatrix(true, false);
+    this.playerOutline.matrixAutoUpdate = false;
+    this.playerOutline.matrix.copy(hull.matrixWorld);
+    this.playerOutline.visible = true;
   }
 
   /** Per frame: outline the target or the held prop, tether + arc while holding. */
