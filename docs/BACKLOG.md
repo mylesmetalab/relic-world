@@ -467,6 +467,33 @@ exist and screenshot each one's distinct look; specifically demonstrate the
 chosen mechanical difference (e.g. climbing failing at the same solidity
 value in one biome but succeeding in another).
 
+**Built (2026-09-10):** shipped as specced, option (a) — per-biome climb
+grip. Three new `Biome` entries in `src/world/biomes.ts`: Dusk Ridge and Root
+Cellar reuse the two `ENVWAYS` colorways in `src/render/palette.ts` that had
+sat unused since the palette was written ("Dusk Ridge" warm orange canyon;
+"Ash Field" grey → Root Cellar's cramped, low-ceiling tangle, `ceilLift:
+-3`); Crystal Vein gets a genuinely new bright cyan/violet ramp, sparse and
+glassy. `Biome` gained an optional `climbSolidity`; `PlayerController.
+climbable()` reads `terrain.biome(x,z).climbSolidity ?? CFG.world.
+climbSolidity` — Glacier (0.65) and Sulphur Pit (0.95) got the brief's own
+suggested values, Crystal Vein overrides to 0.55 (glassiest). No new CFG/
+tune.ts tunable, since this is per-biome data like `terrace`/`ceilLift`, not
+a global slider. Verified at `?seed=7`: typecheck clean; all 10 biomes
+sampled correctly across a wide chunk grid with `climbSolidity` reading back
+per biome; screenshotted all three new biomes' distinct looks. Demonstrated
+the mechanical difference live by force-loading chunks (`chunks.buildAll`)
+at real sheer walls and driving the controller directly: a Crystal Vein wall
+held solidity 0.52–0.60 for ~2.2 s of pushing and never climbed (denied),
+even though that same solidity is comfortably under the global default
+(0.85) and would climb in any of the seven unmodified biomes; the identical
+setup against a Sulphur Pit wall at solidity ≈0.63 granted the climb almost
+immediately. See `docs/PLAN.md`'s twenty-first pass for the full verification
+notes and a caveat about why an exact matched-solidity side-by-side (same
+value, two biomes, live) is harder to catch mid-walk than the brief's "e.g."
+implies — a wall's first-contact solidity is bounded by `wallLo`/`wallHi`
+(≈0.56–0.66) regardless of biome, so the two demonstrations above (each
+compared against the global default) are the cleanest real proof available.
+
 ## 16. Torches run out
 
 **Goal:** placed torches (`X`) are permanent today — `TorchProp` has no

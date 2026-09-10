@@ -77,10 +77,16 @@ same as always.
   ceiling's height field a quarter-metre at a time. Keep at it and it breaks
   through into whatever is overhead (a gallery, or straight to the surface),
   dropping that floor open right there so you can climb up into it.
-- **Biomes have hard edges.** Six regions, each with its own cave colorway
+- **Biomes have hard edges.** Ten regions, each with its own cave colorway
   and its own pen — hatch pitch, nib, black fill, cracks, stipple — and its
   own ground: Glacier and Void Peaks are terraced into climbable ledges,
-  Sulphur Pit is a stalagmite forest, Deep Sea is flat and wide.
+  Sulphur Pit is a stalagmite forest, Deep Sea is flat and wide, Dusk Ridge
+  is a warm sun-baked canyon, Root Cellar is cramped and tangled with a
+  squeezed-down ceiling, Crystal Vein is bright, glassy and sparse. Some
+  biomes grip differently, too: a sheer wall only climbs where the rock reads
+  as hatched, not smooth fill, and Glacier/Crystal Vein read slippery (a
+  lower grip threshold) while Sulphur Pit is soft and crumbly (a higher one)
+  — the same rock, a different feel underfoot depending where you are.
 - **Things can be pushed, together.** Rock shards and gold-leaf relic
   statues on plinths are dynamic bodies at rock density; walk into them and
   they slide and topple. The nearest player simulates a prop and everyone

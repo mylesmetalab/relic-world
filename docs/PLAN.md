@@ -530,6 +530,46 @@ tabs on `?seed=7`: `net.peers` stayed empty and the console showed the same
 relay-join failure), so a live two-tab WebRTC broadcast couldn't be
 observed directly here — an environment limitation, not a code change.
 
+### Twenty-first pass (2026-09-10, latest)
+Brief 15, more biome variety (and give biomes some teeth): three new `Biome`
+entries in `src/world/biomes.ts` — Dusk Ridge and Root Cellar reuse the two
+`ENVWAYS` colorways in `src/render/palette.ts` that had sat unused since the
+palette was written ("Dusk Ridge": warm orange canyon, open and rolling;
+"Ash Field": grey, cramped, now Root Cellar's low-ceiling tangle, `ceilLift:
+-3`); Crystal Vein gets a genuinely new bright cyan/violet "Crystal Vein"
+`ENVWAYS` ramp, sparse and glassy (`rocks: 5`, `tallShare: 0.7`). Mechanical
+hook: option (a) from the brief, per-biome climb grip — `Biome` gained an
+optional `climbSolidity` field; `PlayerController.climbable()`
+(`src/player/controller.ts`) now reads `terrain.biome(x,z).climbSolidity ??
+CFG.world.climbSolidity` instead of only the global tunable. Glacier (0.65)
+and Sulphur Pit (0.95) got the exact override values the brief itself
+suggested (slippery / soft-crumbly); Crystal Vein also overrides to 0.55
+(glassiest of all). No new CFG/tune.ts entry, since these are per-biome data
+like `terrace`/`relief`/`ceilLift`, not a single global slider. Verified at
+`?seed=7`: typecheck clean; sampled `terrain.biomeId`/`terrain.biome(x,z).name`
+across a wide chunk grid and found all 10 biomes present (7 original + the 3
+new), with `climbSolidity` reading back correctly per biome; screenshotted
+Crystal Vein (bright glassy spires), Dusk Ridge (warm orange canyon) and Root
+Cellar (cramped grey rubble) at real in-world locations. Demonstrated the
+mechanical difference live: forced `chunks.buildAll()` at a distant sheer
+wall in Crystal Vein and drove the controller directly (`player.teleport`,
+`cam.yaw`, `input.hold("KeyW", true)`, `pump`) — held ~2.2 s (130 frames)
+against a wall reading solidity 0.52–0.60 the whole time, denied
+(`wallClimb` stayed false) even though that same solidity is well under the
+global default (0.85) and would climb in any of the seven unmodified
+biomes; the identical setup against a Sulphur Pit wall at solidity ≈0.63
+granted the climb almost immediately (`wallClimb`/`climbing` true, height
+rising), screenshotted mid-climb with the HUD reading "climbing." One
+methodology note for the record: since a wall's *first-contact* solidity is
+bounded by `wallLo`/`wallHi` (≈0.56–0.66) regardless of how solid the core
+gets deeper in, Crystal Vein's 0.55 threshold sits just below that band
+(nearly every wall in that biome is ungrippable — reads as glass) while
+Sulphur Pit's 0.95 sits well above it (nearly every wall grips — reads as
+soft rock); this made a live side-by-side "same exact solidity, granted in
+one biome and denied in the other" harder to catch mid-walk than expected,
+so the proof leans on the measured value crossing the *global* default in
+each direction instead, which is the same thing the brief itself asks for.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

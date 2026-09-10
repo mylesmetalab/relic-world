@@ -18,9 +18,12 @@ import { CFG } from "../world/config";
  * physics is bypassed. Stamina refills on the ground.
  *
  * A sheer-face wall climb only grips where the rock reads as hatched, not
- * smooth black fill: `terrain.solidity(x,z) < CFG.world.climbSolidity`.
- * Pillar cores (solidity near 1) are too smooth to grip, so the look tells
- * you where you can climb.
+ * smooth black fill: `terrain.solidity(x,z) < threshold`, where threshold is
+ * `terrain.biome(x,z).climbSolidity` if that biome overrides it, else the
+ * global `CFG.world.climbSolidity`. Pillar cores (solidity near 1) are too
+ * smooth to grip, so the look tells you where you can climb — and some
+ * biomes (Glacier, Crystal Vein) are slipperier than average, some (Sulphur
+ * Pit) more forgiving.
  */
 
 const RADIUS = 0.35;
@@ -113,7 +116,8 @@ export class PlayerController {
   private climbable(f: THREE.Vector3): boolean {
     const x = this.position.x + f.x * (RADIUS + 0.6);
     const z = this.position.z + f.z * (RADIUS + 0.6);
-    return this.terrain.solidity(x, z) < CFG.world.climbSolidity;
+    const threshold = this.terrain.biome(x, z).climbSolidity ?? CFG.world.climbSolidity;
+    return this.terrain.solidity(x, z) < threshold;
   }
 
   /** Look for a ledge in direction `f` (unit, horizontal). Returns the point

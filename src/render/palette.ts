@@ -93,4 +93,5 @@ export const ENVWAYS: EnvWay[] = [
   { name: "Blood Cave", ramp: envRamp(["#12040a", "#7a1030", "#e0244a"], ["#0a0a28", "#1a2a7a", "#3a5ad0"]) },
   { name: "Deep Sea", ramp: envRamp(["#02060e", "#0e3a6a", "#26c6da"], ["#020a1a", "#0a2a5a", "#1b5fe0"]) },
   { name: "Ash Field", ramp: envRamp(["#0a0a0a", "#3a3a3a", "#8a8a8a"], ["#101018", "#2a2a3a", "#4a4a6a"]) },
+  { name: "Crystal Vein", ramp: envRamp(["#0a0e14", "#3aa8c4", "#eafcff"], ["#160a2a", "#5a3aa8", "#c8b8ff"]) },
 ];
