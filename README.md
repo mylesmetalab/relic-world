@@ -124,7 +124,9 @@ its starting value, and `?cfg=` overrides it same as always.
   forward holding a prop or carrying another player, and flails when it is
   the one being carried.
 - `src/net/` — [trystero](https://github.com/dmotz/trystero) rooms over
-  WebRTC; state at 12 Hz, remote figures interpolated.
+  WebRTC; state at 12 Hz, remote figures interpolated; a peer silent for more
+  than 8 s (a closed tab or dropped connection that never sent a clean leave)
+  is swept from the room the same way a normal departure is.
 - `src/ui/photo.ts` — photo mode; also queues up to 3 framed stills into a
   composed comic page (24 px gutters, one wide panel + two small, a
   paper/ink caption strip) exported as one PNG.

@@ -339,6 +339,25 @@ desktop screenshot at `q=low` shows the game running normally — softer ink
 from the lower printScale, no crashes. Next up per the backlog: prune ghost
 peers.
 
+### Sixteenth pass (2026-09-10, latest)
+Prune ghost peers: checked `src/net/room.ts` against brief 11 before touching
+anything, since ten briefs had landed on this file since the brief was
+written. The heartbeat timer's `tick()` already tracked each peer's last
+message time (`Peer.lastAt`, updated on every `state.onMessage`) and already
+swept `this.peers` every tick, deleting any entry silent for more than 8000 ms
+and firing the same `onLeave` callback a clean `room.onPeerLeave` uses;
+`main.ts`'s `net.onLeave` already disposes the remote figure and deletes it
+from `remotes`. That sweep (and the disposal path) was wired in during the
+original multiplayer pass, well before this backlog brief existed — it just
+hadn't been called out as done. No code changed this pass; typecheck stayed
+clean throughout. Verified live rather than by inspection alone: two tabs at
+`?seed=7`, confirmed the peer showed up in `__world.net.peers`/`__world.remotes`
+in tab one, then in tab two ran `clearInterval(net.timer)` to kill its
+heartbeat without a clean leave (a real ghost — no `onPeerLeave` fires), and
+after ~9 s tab one's `net.peers` and `remotes` both went empty. Brief 11 is
+closed with the code as it already stood. Next up per the backlog: iOS / App
+Store (brief 12 — an assessment, not a build).
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
