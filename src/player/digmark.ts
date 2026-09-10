@@ -4,12 +4,13 @@ import type { Terrain, Level } from "../world/terrain";
 
 /** What one click will cut, worked out from the aim each frame. */
 export type DigPlan = {
-  kind: "pit" | "tunnel" | "step";
+  kind: "pit" | "tunnel" | "step" | "roof";
   level: Level;
   /** Cell centre. */
   x: number;
   z: number;
-  /** Floor height the cut leaves behind. */
+  /** Floor height the cut leaves behind (for "roof", the CEILING height it
+   *  raises to instead). */
   floorY: number;
   /** Where the aim ray met rock (chips fly from here). */
   hit: THREE.Vector3;
@@ -22,8 +23,10 @@ const YELLOW = 0xf2f542;
  * The dig marker: a white square on the 1 m cell the next click will cut,
  * drawn at the floor the cut leaves. A pit shows on the ground; a tunnel
  * shows its floor at your feet inside the wall; a step turns yellow and sits
- * up the wall where the new ledge will be. Also a fistful of ink chips when
- * a dig lands, so the cut has weight.
+ * up the wall where the new ledge will be; a roof dig draws the same square
+ * upside down against the ceiling (just under it, dashed post pointing UP to
+ * where the cut hangs from) instead of sitting on a floor. Also a fistful of
+ * ink chips when a dig lands, so the cut has weight.
  */
 export class DigMark {
   private readonly square: THREE.LineLoop;
@@ -73,20 +76,39 @@ export class DigMark {
     }
     const x0 = Math.floor(plan.x), z0 = Math.floor(plan.z);
     const pos = this.square.geometry.attributes.position as THREE.BufferAttribute;
-    const y = plan.floorY + 0.05;
-    pos.setXYZ(0, x0, y, z0);
-    pos.setXYZ(1, x0 + 1, y, z0);
-    pos.setXYZ(2, x0 + 1, y, z0 + 1);
-    pos.setXYZ(3, x0, y, z0 + 1);
+    const roof = plan.kind === "roof";
+    // A roof cut sits just under the (raised) ceiling instead of just above
+    // the floor, and its square winds the other way round — "upside down".
+    const y = plan.floorY + (roof ? -0.05 : 0.05);
+    if (roof) {
+      pos.setXYZ(0, x0, y, z0);
+      pos.setXYZ(1, x0, y, z0 + 1);
+      pos.setXYZ(2, x0 + 1, y, z0 + 1);
+      pos.setXYZ(3, x0 + 1, y, z0);
+    } else {
+      pos.setXYZ(0, x0, y, z0);
+      pos.setXYZ(1, x0 + 1, y, z0);
+      pos.setXYZ(2, x0 + 1, y, z0 + 1);
+      pos.setXYZ(3, x0, y, z0 + 1);
+    }
     pos.needsUpdate = true;
     this.mat.color.setHex(plan.kind === "step" ? YELLOW : PAPER);
     this.square.visible = true;
-    // A step: a dashed post from the hit point down to the ledge, so the
-    // height of the cut reads at a glance.
     if (plan.kind === "step") {
+      // A dashed post from the hit point down to the ledge, so the height of
+      // the cut reads at a glance.
       const pp = this.post.geometry.attributes.position as THREE.BufferAttribute;
       pp.setXYZ(0, plan.x, plan.hit.y, plan.z);
       pp.setXYZ(1, plan.x, y, plan.z);
+      pp.needsUpdate = true;
+      this.post.computeLineDistances();
+      this.post.visible = true;
+    } else if (roof) {
+      // A plumb line hanging DOWN from the ceiling marker to the aim point —
+      // the mirror image of the step's post, which climbs up from the floor.
+      const pp = this.post.geometry.attributes.position as THREE.BufferAttribute;
+      pp.setXYZ(0, plan.x, y, plan.z);
+      pp.setXYZ(1, plan.x, plan.hit.y, plan.z);
       pp.needsUpdate = true;
       this.post.computeLineDistances();
       this.post.visible = true;

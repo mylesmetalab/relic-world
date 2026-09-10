@@ -58,6 +58,12 @@ the rock for you too, and what they push, you see move.
   on the surface and dig down through the crust into the caves;
   digs are shared and persist for the session. Plant torches (X) to light
   the way back.
+- **You can dig up, too.** Aim up at open headroom (not a wall) and each dig
+  raises the ceiling right above you instead — ceilings are painted fields,
+  not colliders, so the cut is aimed by walking the same ray through the
+  ceiling's height field a quarter-metre at a time. Keep at it and it breaks
+  through into whatever is overhead (a gallery, or straight to the surface),
+  dropping that floor open right there so you can climb up into it.
 - **Biomes have hard edges.** Six regions, each with its own cave colorway
   and its own pen — hatch pitch, nib, black fill, cracks, stipple — and its
   own ground: Glacier and Void Peaks are terraced into climbable ledges,

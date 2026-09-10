@@ -33,8 +33,10 @@ export type PeerState = {
 };
 
 export type Peer = { id: string; state: PeerState; lastAt: number };
-/** A dig: level, centre, radius; either a crater depth `d` or a dig-to height `t`. */
-export type DigMsg = { l: number; x: number; z: number; r: number; d: number; t?: number };
+/** A dig: level, centre, radius; either a crater depth `d` or a dig-to height `t`.
+ *  `u: 1` means it dug the level's CEILING up instead of its floor down (`d`
+ *  is then how many metres the ceiling rose). */
+export type DigMsg = { l: number; x: number; z: number; r: number; d: number; t?: number; u?: 1 };
 export type TorchMsg = { id: string; p: [number, number, number] };
 
 const ADJECTIVES = ["Hooded", "Quiet", "Ashen", "Sly", "Grim", "Amber", "Lucky", "Wandering", "Pale", "Bold", "Stony", "Feral"];

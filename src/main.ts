@@ -148,36 +148,77 @@ async function boot(): Promise<void> {
   const myDigs: DigMsg[] = [];
   const applyDig = (m: DigMsg) => {
     const level = Math.min(2, Math.max(0, Math.round(m.l))) as Level;
-    const touched = m.t != null ? terrain.digTo(level, m.x, m.z, m.r, m.t) : terrain.dig(level, m.x, m.z, m.r, m.d);
-    chunks.refloor(level, touched);
+    if (m.u === 1 && level !== 0) {
+      const touched = terrain.digUp(level, m.x, m.z, m.r, m.d);
+      chunks.reCeil(level, touched);
+    } else {
+      const touched = m.t != null ? terrain.digTo(level, m.x, m.z, m.r, m.t) : terrain.dig(level, m.x, m.z, m.r, m.d);
+      chunks.refloor(level, touched);
+    }
     sound.knock(5);
   };
   net.onDig = (d) => applyDig(d);
   let digT = 0;
+  /** March the aim ray in 0.25 m steps looking for the ceiling above the
+   *  level the player is standing in. Ceilings are meshes only — no
+   *  collider — so there is nothing for a physics ray to hit up there; this
+   *  walks the analytic field instead. Only tried once the physics ray has
+   *  already come up empty (a real wall in the way still wins). */
+  const aimCeiling = (max: number, level: 1 | 2): THREE.Vector3 | null => {
+    const STEP_M = 0.25;
+    const steps = Math.ceil((max + 8) / STEP_M);
+    for (let i = 1; i <= steps; i++) {
+      marchPt.copy(p.camera.position).addScaledVector(aimDir, i * STEP_M);
+      if (marchPt.distanceTo(chest) > max) return null;
+      if (marchPt.y >= terrain.ceilingAt(level, marchPt.x, marchPt.z)) return marchPt.clone();
+    }
+    return null;
+  };
   /** What one click would cut. Small cuts, so a tunnel is something you
    *  carve rather than blast: at the ground a body-wide pit a few tens of cm
    *  deep; at a wall a body-wide tunnel at your feet; aim UP at a wall and it
-   *  carves a step you can mantle onto — keep going and you have stairs.
+   *  carves a step you can mantle onto — keep going and you have stairs; aim
+   *  UP at open headroom and it carves the same small cut into the ceiling
+   *  above you, raising it — keep going and it breaks through to whatever is
+   *  overhead.
    *  Snapped to the centre of the 1 m cell so every dig drops a whole cell's
    *  four corners — a clean body-wide shaft instead of a one-vertex funnel. */
   const planDig = (): { m: DigMsg; plan: DigPlan } | null => {
     const D = CFG.dig;
-    const pt = aimPoint(D.reach);
-    if (!pt) return null;
-    const level = terrain.levelOf(pt.x, pt.z, pt.y);
     const feet = player.position.y;
-    const wall = pt.y > feet + 1.1;
-    const x = Math.floor(pt.x) + 0.5, z = Math.floor(pt.z) + 0.5;
-    if (wall && aimDir.y > 0.2) {
-      const stepY = Math.min(Math.max(pt.y - 0.4, feet + 0.8), feet + D.stepUp);
-      return { m: { l: level, x, z, r: D.tunnelRadius, d: 0, t: stepY }, plan: { kind: "step", level, x, z, floorY: stepY, hit: pt } };
+    const pt = aimPoint(D.reach);
+    if (pt) {
+      const level = terrain.levelOf(pt.x, pt.z, pt.y);
+      const wall = pt.y > feet + 1.1;
+      const x = Math.floor(pt.x) + 0.5, z = Math.floor(pt.z) + 0.5;
+      if (wall && aimDir.y > 0.2) {
+        const stepY = Math.min(Math.max(pt.y - 0.4, feet + 0.8), feet + D.stepUp);
+        return { m: { l: level, x, z, r: D.tunnelRadius, d: 0, t: stepY }, plan: { kind: "step", level, x, z, floorY: stepY, hit: pt } };
+      }
+      if (wall) {
+        const t = feet - 0.08;
+        return { m: { l: level, x, z, r: D.tunnelRadius, d: 0, t }, plan: { kind: "tunnel", level, x, z, floorY: t, hit: pt } };
+      }
+      const m: DigMsg = { l: level, x, z, r: D.radius, d: D.depth };
+      return { m, plan: { kind: "pit", level, x, z, floorY: terrain.levelAt(level, x, z) - D.depth, hit: pt } };
     }
-    if (wall) {
-      const t = feet - 0.08;
-      return { m: { l: level, x, z, r: D.tunnelRadius, d: 0, t }, plan: { kind: "tunnel", level, x, z, floorY: t, hit: pt } };
+    // Nothing solid ahead. Looking up steeply with clear headroom? Try the
+    // ceiling of the level we're standing in (the surface has none to dig).
+    if (aimDir.y > 0.3) {
+      const level = terrain.levelOf(player.position.x, player.position.z, feet);
+      if (level === 1 || level === 2) {
+        const roofPt = aimCeiling(D.reach, level);
+        if (roofPt) {
+          const x = Math.floor(roofPt.x) + 0.5, z = Math.floor(roofPt.z) + 0.5;
+          const newCeil = terrain.ceilingAt(level, x, z) + D.depth;
+          return {
+            m: { l: level, x, z, r: D.tunnelRadius, d: D.depth, u: 1 },
+            plan: { kind: "roof", level, x, z, floorY: newCeil, hit: roofPt },
+          };
+        }
+      }
     }
-    const m: DigMsg = { l: level, x, z, r: D.radius, d: D.depth };
-    return { m, plan: { kind: "pit", level, x, z, floorY: terrain.levelAt(level, x, z) - D.depth, hit: pt } };
+    return null;
   };
   const digAtAim = () => {
     const planned = planDig();
@@ -337,6 +378,7 @@ async function boot(): Promise<void> {
   const raycaster = new THREE.Raycaster();
   let lastSpeed = 0;
   const tmp = new THREE.Vector3();
+  const marchPt = new THREE.Vector3();
   const peerPositions = new Map<string, { x: number; y: number; z: number }>();
   let acc = 0;
   let last = performance.now();

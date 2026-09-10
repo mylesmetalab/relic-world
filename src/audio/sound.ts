@@ -115,9 +115,10 @@ export class Sound {
     this.tone(120 + k * 80, 0.12 + k * 0.1, 0.1 + k * 0.3, "triangle");
     this.burst(300 + k * 500, 1.1, 0.1 + k * 0.1, 0.15 + k * 0.3);
   }
-  /** A pick into rock: a dull thud and a spray of grit. Steps ring a little higher. */
-  dig(kind: "pit" | "tunnel" | "step" = "pit"): void {
-    const hi = kind === "step" ? 1.25 : kind === "tunnel" ? 1.1 : 1;
+  /** A pick into rock: a dull thud and a spray of grit. Steps ring a little
+   *  higher; a roof cut (swung up into rock overhead) rings highest of all. */
+  dig(kind: "pit" | "tunnel" | "step" | "roof" = "pit"): void {
+    const hi = kind === "roof" ? 1.4 : kind === "step" ? 1.25 : kind === "tunnel" ? 1.1 : 1;
     this.tone(95 * hi, 0.11, 0.3, "triangle");
     this.burst(650 * hi, 1.0, 0.13, 0.3);
     this.burst(2600, 0.7, 0.18, 0.12, "highpass");

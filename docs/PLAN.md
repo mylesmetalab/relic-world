@@ -224,6 +224,54 @@ both — the gold golem statue on its plinth, out under the paper sky on the
 surface and tucked in a gallery alcove under the ringed ceiling. Next up per
 the backlog: dig upwards (ceilings).
 
+### Thirteenth pass (2026-09-10, night)
+Dig upwards (ceilings): a per-level upward dig map (`Terrain.digsUp[1|2]`,
+metres the ceiling has risen) alongside the existing downward `digs`;
+`ceilingAt(level,x,z) = base + dugUp` where the base is `ceiling` (lower
+cave's roof, level 2) or `ceiling2` (gallery's roof, level 1). `dig`/`digTo`'s
+shared `carve` now takes the target map directly so a new `digUp` reuses it
+verbatim — same small, cell-snapped, radius-falloff increments as a floor
+dig. When a ceiling's dugUp reaches `thickness` of whatever sits overhead
+(reusing the existing `thickness()`/`through()` used for downward
+breakthroughs — the same slab either way), `floor2At`/`surfaceAt` drop to
+match the floor below via a new `throughUp`, exactly mirroring how a floor
+dig breaks through from above. `ChunkManager.recutCeilings` samples
+`ceilingAt` instead of the raw analytic ceiling and drops any cell that's
+fully broken through (`brokenThroughUp`); a new `reCeil(level, keys)` re-cuts
+the ceiling and re-samples the floor(s) above via the existing `refloor`.
+Aim: since ceilings carry no collider at all (nothing for the physics ray to
+hit), `main.ts`'s `planDig` only reaches the new `aimCeiling` ray-march (0.25
+m steps testing `y ≥ ceilingAt`) once the ordinary physics-based aim comes up
+empty and the look direction is steeply up (`aimDir.y > 0.3`) from inside a
+level with a ceiling to dig (1 or 2 — the surface has open sky, nothing to
+cut). `DigMsg.u = 1` marks an upward dig over the net, riding the existing
+dig-replay for late joiners with no new message type. The dig marker (`digmark.ts`)
+draws the same square upside down against the (raised) ceiling with a plumb
+line hanging down to the aim point, mirroring the step marker's post; a
+"roof" dig kind gets its own dig sound (`sound.ts`, highest-pitched of the
+four). Verified at `?seed=7`: typecheck clean; drove the aim system directly
+(`__world.player.teleport`, `cam.pitch/yaw`, `pump`) at open headroom away
+from any wall, read the resulting `plan.kind === "roof"` back with the
+correct cell/ceiling-height/hit point, then fired it for real through
+`digAtAim()` and watched `ceilingAt` rise by one dig's amount; pushed a
+column to full breakthrough with `terrain.digUp` + `chunks.reCeil` (the fast
+path the brief invites, rather than clicking one grain at a time) and
+confirmed `brokenThroughUp` flips true and `surfaceAt` collapses onto
+`floorAt` exactly at that point; stood in the lower cave and looked straight
+up through the new hole to open sky where solid rock had been (screenshot),
+confirming both the mesh and the collider opened together. One deviation
+worth flagging: because the aim's max upward pitch is only ~31° off the
+horizontal (`PlayerCamera`'s existing `PITCH_MIN`), a shaft dug by staying
+in one spot and clicking repeatedly drifts forward each click rather than
+staying in a single vertical column, since the ray's fixed shallow slope
+means "a bit higher" also reads as "a bit further ahead" — a real player
+would naturally step forward to follow their own cut (the same way the
+existing wall-step mechanic climbs a staircase forward, not straight up),
+so this reads as consistent with the existing feel rather than a bug, but it
+does mean a single stationary column rarely reaches full breakthrough on its
+own; call it out if it feels wrong in play. Next up per the backlog: landing
+and falls.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

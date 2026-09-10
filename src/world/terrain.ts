@@ -72,6 +72,10 @@ export class Terrain {
   private readonly hills: Simplex2;
   /** Dug-out depth per integer world vertex ("x,z" → metres removed), per level. */
   readonly digs: [Map<string, number>, Map<string, number>, Map<string, number>] = [new Map(), new Map(), new Map()];
+  /** Dug-UP height per integer world vertex ("x,z" → metres the ceiling has been
+   *  raised), per level whose ceiling can be dug (1 = gallery roof, 2 = lower
+   *  cave roof; index 0 is unused — the surface has open sky, no ceiling). */
+  readonly digsUp: [Map<string, number>, Map<string, number>, Map<string, number>] = [new Map(), new Map(), new Map()];
   /** Vault sites, memoised per 36 m grid cell (there is at most one per cell). */
   private readonly vaultCache = new Map<string, Vault | null>();
 
@@ -246,8 +250,9 @@ export class Terrain {
 
   // ── Dug fields (what is actually built and collided) ─────────────────
 
-  private dug(level: Level, x: number, z: number): number {
-    const m = this.digs[level];
+  /** Bilinear-sampled value from a per-vertex dig map (shared by downward
+   *  `digs` and upward `digsUp`). */
+  private sampleDig(m: Map<string, number>, x: number, z: number): number {
     if (m.size === 0) return 0;
     const x0 = Math.floor(x), z0 = Math.floor(z);
     const fx = x - x0, fz = z - z0;
@@ -255,30 +260,81 @@ export class Terrain {
     return (d(x0, z0) * (1 - fx) + d(x0 + 1, z0) * fx) * (1 - fz) + (d(x0, z0 + 1) * (1 - fx) + d(x0 + 1, z0 + 1) * fx) * fz;
   }
 
+  private dug(level: Level, x: number, z: number): number {
+    return this.sampleDig(this.digs[level], x, z);
+  }
+
+  /** Metres a ceiling has been dug up here (1 = gallery roof, 2 = lower cave roof). */
+  private dugUp(level: 1 | 2, x: number, z: number): number {
+    return this.sampleDig(this.digsUp[level], x, z);
+  }
+
   /** Lower floor with digging. */
   floorAt(x: number, z: number): number {
     return this.floor(x, z) - this.dug(2, x, z);
   }
 
-  /** How far through the rock under a level a dig has gone here: 0 intact, 1 open. */
+  /** How far through the rock under/over a level a dig has gone here: 0 intact, 1 open.
+   *  `t` is the thickness of the rock being dug through (down OR up — the
+   *  caller picks which `thickness(level,...)` applies). */
   private through(level: Level, x: number, z: number, d: number): number {
     if (d <= 0) return 0;
     const t = this.thickness(level, x, z);
     return smoothstep(t - 0.15, t + 0.35, d);
   }
 
-  /** Gallery floor with digging; dug through the slab it drops to the lower floor. */
+  /** The level whose FLOOR sits directly above a given level's ceiling — what
+   *  breaks through when that ceiling is dug up far enough. Level 1's roof
+   *  (`ceiling2`) always sits under the surface; level 2's roof (`ceiling`)
+   *  sits under the gallery floor where there is one, else straight under
+   *  the surface. */
+  private levelAboveCeiling(level: 1 | 2, x: number, z: number): Level {
+    return level === 1 ? 0 : this.gallery(x, z) > 0.5 ? 1 : 0;
+  }
+
+  /** Ceiling height with upward digging: the roof over `level` (1 = gallery,
+   *  2 = lower cave), raised by however much has been dug into it. */
+  ceilingAt(level: 1 | 2, x: number, z: number): number {
+    const base = level === 2 ? this.ceiling(x, z) : this.ceiling2(x, z);
+    return base + this.dugUp(level, x, z);
+  }
+
+  /** 0 intact .. 1 fully broken through to the level above (dug up all the
+   *  way through the rock over `level`'s ceiling). */
+  private throughUp(level: 1 | 2, x: number, z: number): number {
+    const d = this.dugUp(level, x, z);
+    if (d <= 0) return 0;
+    return this.through(this.levelAboveCeiling(level, x, z), x, z, d);
+  }
+
+  /** Has this ceiling been dug all the way through here (a hole up into the
+   *  level above, opened from below)? */
+  brokenThroughUp(level: 1 | 2, x: number, z: number): boolean {
+    const t = this.thickness(this.levelAboveCeiling(level, x, z), x, z);
+    return this.dugUp(level, x, z) >= t + 0.1;
+  }
+
+  /** Gallery floor with digging; dug through the slab (from above, or from
+   *  below through the lower cave's ceiling) it drops to the lower floor. */
   floor2At(x: number, z: number): number {
     const d = this.dug(1, x, z);
-    const through = this.through(1, x, z, d);
+    const downThrough = this.through(1, x, z, d);
+    // Level 2's ceiling breaks through INTO level 1 only where a gallery
+    // actually sits overhead — elsewhere level 2 breaks straight to the surface.
+    const upThrough = this.levelAboveCeiling(2, x, z) === 1 ? this.throughUp(2, x, z) : 0;
+    const through = Math.max(downThrough, upThrough);
     return lerp(this.floor2(x, z) - d, this.floorAt(x, z), through);
   }
 
-  /** Surface with digging; dug through the crust it drops to the cave below. */
+  /** Surface with digging; dug through the crust (from above, or from below
+   *  through whatever cave's ceiling sits under it) it drops to the cave below. */
   surfaceAt(x: number, z: number): number {
     const d = this.dug(0, x, z);
-    const through = this.through(0, x, z, d);
-    const below = this.gallery(x, z) > 0.5 ? this.floor2At(x, z) : this.floorAt(x, z);
+    const downThrough = this.through(0, x, z, d);
+    const gal = this.gallery(x, z) > 0.5;
+    const upThrough = gal ? this.throughUp(1, x, z) : this.throughUp(2, x, z);
+    const through = Math.max(downThrough, upThrough);
+    const below = gal ? this.floor2At(x, z) : this.floorAt(x, z);
     return lerp(this.surface(x, z) - d, below, through);
   }
 
@@ -315,22 +371,32 @@ export class Terrain {
    *  `depth`, with a soft rim so it reads as hand-dug. Flat-bottomed matters:
    *  a V-shaped crater one vertex wide is a funnel the body can't fit down. */
   dig(level: Level, x: number, z: number, radius: number, depth: number): Set<string> {
-    return this.carve(level, x, z, radius, (X, Z, t) => depth * smoothstep(0, 0.4, t) + (this.digs[level].get(`${X},${Z}`) ?? 0));
+    const m = this.digs[level];
+    return this.carve(m, x, z, radius, (X, Z, t) => depth * smoothstep(0, 0.4, t) + (m.get(`${X},${Z}`) ?? 0));
   }
 
   /** Dig a level DOWN TO a height (a tunnel into a wall, a flat-bottomed pit).
    *  The rim keeps a soft falloff so the cut reads as hand-dug. */
   digTo(level: Level, x: number, z: number, radius: number, targetY: number): Set<string> {
     const base = (X: number, Z: number) => (level === 0 ? this.surface(X, Z) : level === 1 ? this.floor2(X, Z) : this.floor(X, Z));
-    return this.carve(level, x, z, radius, (X, Z, t) => {
+    const m = this.digs[level];
+    return this.carve(m, x, z, radius, (X, Z, t) => {
       const need = Math.max(0, base(X, Z) - targetY) * smoothstep(0, 0.35, t);
-      return Math.max(this.digs[level].get(`${X},${Z}`) ?? 0, need);
+      return Math.max(m.get(`${X},${Z}`) ?? 0, need);
     });
   }
 
-  private carve(level: Level, x: number, z: number, radius: number, value: (X: number, Z: number, t: number) => number): Set<string> {
+  /** Dig a ceiling UP: vertices within `radius` raise by `depth`, same soft
+   *  rim and same small cell-snapped increments as a floor `dig`. Reuses the
+   *  same `carve` (and the same 80 m cap) so ceiling digs behave exactly like
+   *  floor digs — just pointed the other way. */
+  digUp(level: 1 | 2, x: number, z: number, radius: number, depth: number): Set<string> {
+    const m = this.digsUp[level];
+    return this.carve(m, x, z, radius, (X, Z, t) => depth * smoothstep(0, 0.4, t) + (m.get(`${X},${Z}`) ?? 0));
+  }
+
+  private carve(m: Map<string, number>, x: number, z: number, radius: number, value: (X: number, Z: number, t: number) => number): Set<string> {
     const touched = new Set<string>();
-    const m = this.digs[level];
     for (let Z = Math.floor(z - radius); Z <= Math.ceil(z + radius); Z++) {
       for (let X = Math.floor(x - radius); X <= Math.ceil(x + radius); X++) {
         const dd = Math.hypot(X - x, Z - z);

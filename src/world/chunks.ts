@@ -118,18 +118,23 @@ export class ChunkManager {
     return (ix, iz) => g[iz * CELLS + ix] === 1 || neighbourGallery(g, ix, iz);
   }
 
-  /** Ceilings are drawn where the level above is still intact. */
+  /** Ceilings are drawn where the level above is still intact — raised in
+   *  place where dug up from below (`ceilingAt`), and cut away entirely once
+   *  a dig has punched all the way through (`brokenThroughUp`), same as a
+   *  shaft dug from above cuts away the floor. */
   private recutCeilings(chunk: Chunk): void {
     const T = this.terrain;
     const ox = chunk.cx * CHUNK, oz = chunk.cz * CHUNK;
     const cell = (ix: number, iz: number) => [ox + ix + 0.5, oz + iz + 0.5] as const;
     const isGallery = (ix: number, iz: number) => chunk.gallery[iz * CELLS + ix] === 1;
-    // Lower ceiling: gone where a shaft is, or where whatever sits directly on
-    // this slab (the gallery floor, or the surface) was dug through.
+    // Lower ceiling: gone where a shaft is, where it has been dug all the way
+    // through from below, or where whatever sits directly on this slab (the
+    // gallery floor, or the surface) was dug through from above.
     if (chunk.ceilLower) {
-      const grid = sampleGrid((x, z) => T.ceiling(x, z), chunk.cx, chunk.cz);
+      const grid = sampleGrid((x, z) => T.ceilingAt(2, x, z), chunk.cx, chunk.cz);
       const geo = gridGeometry(grid, chunk.cx, chunk.cz, false, (ix, iz) => {
         const [x, z] = cell(ix, iz);
+        if (T.brokenThroughUp(2, x, z)) return false;
         if (isGallery(ix, iz)) return T.hole(x, z) <= 0.62 && !T.brokenThrough(1, x, z);
         return !T.brokenThrough(0, x, z);
       });
@@ -137,13 +142,32 @@ export class ChunkManager {
       chunk.ceilLower.geometry = geo ?? new THREE.BufferGeometry();
     }
     if (chunk.ceilUpper) {
-      const grid = sampleGrid((x, z) => T.ceiling2(x, z), chunk.cx, chunk.cz);
+      const grid = sampleGrid((x, z) => T.ceilingAt(1, x, z), chunk.cx, chunk.cz);
       const geo = gridGeometry(grid, chunk.cx, chunk.cz, false, (ix, iz) => {
         const [x, z] = cell(ix, iz);
+        if (T.brokenThroughUp(1, x, z)) return false;
         return isGallery(ix, iz) && !T.brokenThrough(0, x, z);
       });
       chunk.ceilUpper.geometry.dispose();
       chunk.ceilUpper.geometry = geo ?? new THREE.BufferGeometry();
+    }
+  }
+
+  /** Re-cut one level's ceiling in the given chunks after an upward dig, and
+   *  re-sample the floor(s) it sits under — a dig that breaks all the way
+   *  through drops that floor down to meet it (`floor2At`/`surfaceAt` already
+   *  do this via `throughUp`; `refloor` just needs to re-sample them). */
+  reCeil(level: 1 | 2, keys: Iterable<string>): void {
+    const keyList = [...keys];
+    for (const key of keyList) {
+      const chunk = this.chunks.get(key);
+      if (chunk) this.recutCeilings(chunk);
+    }
+    if (level === 2) {
+      this.refloor(1, keyList);
+      this.refloor(0, keyList);
+    } else {
+      this.refloor(0, keyList);
     }
   }
 
