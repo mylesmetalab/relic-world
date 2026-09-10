@@ -571,6 +571,106 @@ Nostr signalling relay is still blocked (reconfirmed with two real tabs —
 
 ---
 
+## 17. A wandering presence
+
+**Goal:** give the cave a sense of not being alone, without turning this
+into a combat game. One roaming figure per room, non-hostile, no fail
+state, no damage, no combat — it just reacts to torchlight: recedes from a
+lit torch nearby, otherwise drifts on its own slow business. Decided with
+Myles directly (2026-09-10): this shape specifically (a wandering presence,
+not a cave-in event, not a hostile creature with a health/knockback model —
+that's explicitly out of scope, a much bigger swing this pass isn't taking),
+and **gated to private/seeded worlds only for now** (`?seed=`) — NOT the
+shared rolling world everyone plays in by default, until it's been felt out.
+
+- **Gate:** `src/main.ts` already computes `const shared = seedParam ==
+  null;` (true only for the default shared world). Also add a CFG toggle
+  (`world.presenceEnabled`, default `true`) so it can be killed without a
+  redeploy — `src/ui/tune.ts` already has a checkbox pattern (`<input
+  type="checkbox" data-k="...">`, see the STL toggle) if that's the cleanest
+  fit, otherwise a 0/1 numeric tunable is fine. The feature is active only
+  when `!shared && CFG.world.presenceEnabled`.
+- **Look:** do NOT reuse an existing playable `GolemKind` from `src/player/
+  golems.ts`/`CHARACTERS` (`src/player/figure.ts`) — a player could be
+  wearing that same skin and it would read as a confusing duplicate, not an
+  entity. Build its shape with its own small, distinct construction (a
+  jagged rock-stack silhouette in the same idiom as the golems is fine and
+  cheap to reuse the *technique* from, just not literally shared model
+  data), rendered with the same toon/hatch material system as everything
+  else so it's visually consistent with the world.
+- **"Half-seen," not "unprinted until lit":** rock's bare-paper-until-lit
+  look is driven by a persistent per-vertex ink map that doesn't apply to a
+  moving entity. Approximate the same *feeling* more simply: each frame,
+  check whether it's within `reach` of any of the current frame's active
+  light sources (the same `p.torches`/light list `src/main.ts` already
+  builds each frame from `chunks.props.torches` + the player's own torch)
+  and only render it (or render it at meaningfully lower opacity/visibility)
+  when it is. Genuinely half-seen — most of the time, in the dark, you
+  shouldn't see it at all.
+- **Behavior — deliberately simple, no pathfinding:** wander by drifting
+  toward a randomly re-picked nearby target point (re-pick every several
+  seconds, or on arrival), loosely avoiding walls by sampling
+  `terrain.solidity(x,z)` the way `scatterRocks` avoids walls rather than
+  real collision/pathfinding. When any player-carried or placed torch comes
+  within some radius, switch to fleeing: accelerate directly away from the
+  nearest such light, faster than its normal drift. No attack, no contact
+  effect on the player at all — if a player walks right into it, nothing
+  happens (or, at most, the same passive collider treatment as any other
+  prop; do not add any harm/knockback/health system, none exists in this
+  game and this brief must not be the one to introduce it).
+- **One per room, single sim authority:** exactly one connected client
+  should simulate its movement/AI each frame and broadcast position (+
+  fleeing state) to the rest — everyone else just interpolates/places it,
+  same spirit as how `Props`' dynamic bodies work ("the nearest player
+  simulates a prop and everyone else follows," `src/world/props.ts`). Since
+  this is a single shared entity, not a per-position prop, pick authority
+  with a simple tie-break already idiomatic to this codebase: `isOwner` in
+  `src/main.ts` breaks position ties with `id < net.selfId`; for one global
+  entity, the equivalent is "I am the owner iff my id is the lexicographically
+  smallest among `net.selfId` and every connected `remotes`/peer id." Add a
+  small new net message (mirror `TorchMsg`/`DigMsg` in `src/net/room.ts`,
+  e.g. `PresenceMsg = { p: [number, number, number], f: 0 | 1 }` for
+  position + fleeing) sent by the owner on a modest interval (reuse the
+  torch cadence, ~4 s, or faster while fleeing for responsiveness — use
+  judgement).
+- **Sound, optional, keep it simple:** a soft, occasional, non-continuous
+  audio cue (NOT a drone — the design rules ban a continuous drone
+  specifically) when it's nearby but unlit, reusing `Sound`'s synthesis
+  style (`src/audio/sound.ts`). If this proves fiddly, it's fine to ship
+  without it and note that as a followup — the visual behavior is the
+  substance of this brief, the sound is a nice-to-have.
+- This is the largest, least-precedented brief in the backlog — an actual
+  new entity type with AI and its own net sync, not an extension of
+  something that already exists. It is explicitly fine to land a smaller,
+  solid version (e.g. skip the sound cue, or simplify wander/flee to
+  something cruder than described) rather than force the full design if a
+  part of it proves genuinely risky — say so clearly rather than shipping
+  something half-working. Two failed attempts on any one sub-problem means
+  stop and report exactly what's blocking, same as every other brief.
+
+Files: a new small module (e.g. `src/world/presence.ts`, following the
+shape of `src/world/props.ts`/`golems.ts` rather than cramming this into an
+existing file), `src/main.ts` (the gate, per-frame tick, ownership check,
+wiring into the light list for visibility), `src/net/room.ts` (the new
+message type), `src/world/config.ts` + `src/ui/tune.ts`
+(`presenceEnabled`, and any wander/flee tunables — radius, speeds).
+
+Verify: `?seed=7` (a private world — the gate should be ON here), confirm
+it exists and wanders when left alone for a while (pump many frames,
+sample its position over time to show it's moving); place/carry a torch
+near it and confirm it flees (position moves away, screenshot the visible
+moment it's lit and receding); move away and confirm it becomes invisible/
+very dim again; confirm walking directly into it does nothing (no damage,
+no knockback, no console error). Load the game with NO `?seed=` (or
+`presenceEnabled: 0` via `?cfg=`) and confirm it does not spawn at all —
+this gate is the one thing that must not be wrong. Two-tab test if
+feasible: confirm only one tab simulates it (check which one via the
+ownership tie-break) and the other sees it move via the new net message —
+if the sandbox's WebSocket relay is blocked (as in recent prior passes),
+verify the ownership/message-passing logic directly instead and say so.
+
+---
+
 ## How to work here
 
 - Repo `~/Sites/relic-world`, public `mylesmetalab/relic-world`. Push to
