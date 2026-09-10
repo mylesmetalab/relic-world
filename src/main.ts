@@ -236,6 +236,7 @@ async function boot(): Promise<void> {
     b: chat.outgoing(),
     h: carrying ? [holdPoint.x, holdPoint.y, holdPoint.z] : null,
     g: carrying,
+    ho: !!grab.held,
   }));
 
   const photo = new PhotoMode(p, ph, canvas, figure, () => input.requestLock());
@@ -518,6 +519,7 @@ async function boot(): Promise<void> {
       sendMyTorches();
     }
     const speed = photo.active ? 0 : Math.hypot(player.velocity.x, player.velocity.z);
+    figure.reaching = !!grab.held || !!carrying;
     figure.update(player.position, wish, speed, photo.active ? 0 : dt);
     if (photo.active) photo.update(player.position, player.body);
     else cam.update(player.position, dt, player.body);
@@ -570,6 +572,7 @@ async function boot(): Promise<void> {
       r.speed = st.s;
       if (carrying === id) r.pos.copy(holdPoint).setY(holdPoint.y - 0.6);
       r.figure.flail = carrying === id || (st.g == null && !!st.h) || false;
+      r.figure.reaching = !!st.g || !!st.ho;
       r.figure.place(r.pos, r.facing);
       const wantChar = normaliseCharacter(st.c);
       if (r.figure.character !== wantChar && r.loading !== wantChar) {

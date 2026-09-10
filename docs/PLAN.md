@@ -98,6 +98,18 @@ two tabs); jump latch; ink chips + pick sound; touch controls + installable
 web-app shell (manifest, icons, iOS meta). Everything after this lives in
 `docs/BACKLOG.md` as self-contained briefs — arms first.
 
+### Sixth pass (2026-09-10)
+Arms: every procedural golem but the Hound, plus the packed cast and any
+dropped-in STL, now build two arm pivots off the figure's own material —
+shoulder height 0.72 × the figure's height, shoulder half-width sampled from
+the hull's own width at that slice. They swing opposite the legs while
+walking (scaled per golem kind in `GOLEM_MOTION`), reach forward while
+holding a prop or carrying another player (`figure.reaching`, set next to
+`figure.flail`), and flail alongside the legs when the figure itself is
+carried. Remote figures pick up the same flag from a new `ho` (holding a
+prop) bit on `PeerState`. Next up per the backlog: show-who-you-can-pick-up
+outline, two-torch doors.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

@@ -51,13 +51,35 @@ export function normaliseCharacter(id: string): CharacterId {
 /** Yaw (radians) that turns each packed figure to face +z in its own frame. */
 export const FACING: Record<string, number> = { bast: (95 * Math.PI) / 180, rook: (72 * Math.PI) / 180, cam: Math.PI / 2 };
 
+/** Deterministic string hash — same character id always builds the same limbs. */
+function strHash(s: string): number {
+  let h = 13;
+  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
+}
+
+/** How wide the hull is (max |x|) among vertices near height `y`, in the
+ *  mesh's own local units. Falls back when the slice misses every vertex. */
+function hullHalfWidthAt(geometry: THREE.BufferGeometry, y: number, band: number, fallback: number): number {
+  const pos = geometry.attributes.position as THREE.BufferAttribute;
+  let w = 0;
+  for (let i = 0; i < pos.count; i++) {
+    if (Math.abs(pos.getY(i) - y) > band) continue;
+    w = Math.max(w, Math.abs(pos.getX(i)));
+  }
+  return w > 0.02 ? w : fallback;
+}
+
+/** Default motion flavour for packed figures and dropped-in STL. */
+const DEFAULT_MOTION = { bob: 0.06, lean: 0.035, float: 0, armLen: 0.46, armSwing: 0.8 };
+
 export class Figure {
   readonly group = new THREE.Group();
   private readonly inner = new THREE.Group();
   readonly material: THREE.ShaderMaterial;
   private facing = 0;
   private bob = 0;
-  private motion = { bob: 0.06, lean: 0.035, float: 0 };
+  private motion = { ...DEFAULT_MOTION };
   /** Fired on each footfall while walking (audio hook). */
   onStep: (() => void) | null = null;
   /** Only golem geometry is owned; packed geometry is shared via models.ts. */
@@ -68,8 +90,13 @@ export class Figure {
   height = 1.7;
   /** Leg pivots (golems only) — swing with the walk. */
   private legs: THREE.Group[] = [];
+  /** Arm pivots (every figure but the hound) — swing opposite the legs,
+   *  reach forward when `reaching`, flail when `flail`. */
+  private arms: THREE.Group[] = [];
   /** Flail while carried. */
   flail = false;
+  /** Reach forward — holding a prop, or carrying another player. */
+  reaching = false;
 
   constructor(private readonly p: Pipeline) {
     this.material = makeFigureMaterial(p);
@@ -123,13 +150,14 @@ export class Figure {
         this.legs.push(pivot);
       }
     } else {
-      this.motion = { bob: 0.06, lean: 0.035, float: 0 };
+      this.motion = { ...DEFAULT_MOTION };
       const m = await loadPacked(id as PackedId);
       if (this.character !== id) return; // superseded while loading
       geometry = m.geometry;
       full = m.full;
       cutMin = m.cutMin;
     }
+    this.arms = this.buildArms(geometry, full, cutMin, height, this.motion.armLen, strHash(id) ^ 0x4a12);
     const scale = height / (full.max.y - cutMin);
     const centre = new THREE.Vector3();
     full.getCenter(centre);
@@ -146,12 +174,38 @@ export class Figure {
     const carrier = new THREE.Group();
     carrier.add(color, hull);
     for (const leg of this.legs) carrier.add(leg);
+    for (const arm of this.arms) carrier.add(arm);
     carrier.scale.setScalar(scale);
     carrier.position.set(-centre.x * scale, -cutMin * scale, -centre.z * scale);
     carrier.rotation.y = FACING[id] ?? 0;
     this.inner.add(carrier);
     this.material.uniforms.uMinY.value = full.min.y;
     this.material.uniforms.uMaxY.value = full.max.y;
+  }
+
+  /** Two arm pivots either side of the shoulder line (hull width sampled at
+   *  0.72 × height); zero `armLen` (the hound) builds none. Same rock-cone
+   *  recipe and material as the legs — no new shader. */
+  private buildArms(geometry: THREE.BufferGeometry, full: THREE.Box3, cutMin: number, height: number, armLen: number, seed: number): THREE.Group[] {
+    if (armLen <= 0) return [];
+    const shoulderY = cutMin + 0.72 * (full.max.y - cutMin);
+    const halfW = hullHalfWidthAt(geometry, shoulderY, 0.15, 0.18 * (full.max.y - cutMin));
+    const rng = mulberry32(seed);
+    const arms: THREE.Group[] = [];
+    for (const side of [-1, 1]) {
+      const g = rockGeometry(rng, 0.05 + rng() * 0.02, armLen);
+      g.translate(0, -armLen / 2, 0); // hangs from the pivot
+      const pivot = new THREE.Group();
+      pivot.position.set(side * (halfW + 0.03), shoulderY, 0);
+      const arm = new THREE.Mesh(g, this.material);
+      anchorHatch(this.p, arm, 0.2);
+      const armHull = new THREE.Mesh(g, this.p.hullMat);
+      this.p.ndHidden.add(armHull);
+      pivot.add(arm, armHull);
+      pivot.userData.geo = g;
+      arms.push(pivot);
+    }
+    return arms;
   }
 
   /** Place at the feet, turn toward `heading` (world xz, may be zero), bob with speed. */
@@ -174,6 +228,10 @@ export class Figure {
       this.inner.rotation.z = Math.sin(t) * 0.5;
       this.inner.rotation.x = Math.cos(t * 0.7) * 0.35;
       this.legs.forEach((leg, i) => { leg.rotation.x = Math.sin(t * 1.6 + i * 2) * 1.1; });
+      this.arms.forEach((arm, i) => {
+        arm.rotation.x = Math.sin(t * 1.6 + i * 2 + Math.PI) * 1.2;
+        arm.rotation.z = Math.sin(t * 1.3 + i) * 0.6;
+      });
       return;
     }
     this.inner.rotation.x = 0;
@@ -183,6 +241,17 @@ export class Figure {
     this.legs.forEach((leg, i) => {
       const phase = this.legs.length === 4 ? (i === 0 || i === 3 ? 0 : Math.PI) : i * Math.PI;
       leg.rotation.x = Math.sin(this.bob + phase) * swing;
+    });
+    // Arms swing opposite the legs; reach forward holding a prop or carrying.
+    const armSwing = Math.min(1, speed / 4) * m.armSwing;
+    this.arms.forEach((arm, i) => {
+      if (this.reaching) {
+        arm.rotation.x = -1.3;
+        arm.rotation.z = (i === 0 ? -1 : 1) * 0.12;
+      } else {
+        arm.rotation.x = Math.sin(this.bob + i * Math.PI + Math.PI) * armSwing;
+        arm.rotation.z = 0;
+      }
     });
   }
 
@@ -209,6 +278,8 @@ export class Figure {
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
     const cutMin = geometry.boundingBox!.min.y;
+    this.motion = { ...DEFAULT_MOTION };
+    this.arms = this.buildArms(geometry, full, cutMin, height, this.motion.armLen, strHash("custom-stl") ^ 0x4a12);
     const scale = height / (full.max.y - cutMin);
     const centre = new THREE.Vector3();
     full.getCenter(centre);
@@ -217,7 +288,6 @@ export class Figure {
     this.ownedGeometry?.dispose();
     this.ownedGeometry = geometry;
     this.height = height;
-    this.motion = { bob: 0.06, lean: 0.035, float: 0 };
     const color = new THREE.Mesh(geometry, this.material);
     anchorHatch(this.p, color, 0);
     const hull = new THREE.Mesh(geometry, this.p.hullMat);
@@ -225,6 +295,7 @@ export class Figure {
     this.hull = hull;
     const carrier = new THREE.Group();
     carrier.add(color, hull);
+    for (const arm of this.arms) carrier.add(arm);
     carrier.scale.setScalar(scale);
     carrier.position.set(-centre.x * scale, -cutMin * scale, -centre.z * scale);
     this.inner.add(carrier);
@@ -248,6 +319,7 @@ export class Figure {
     if (this.hull) this.p.ndHidden.delete(this.hull);
     this.ownedGeometry?.dispose();
     for (const leg of this.legs) (leg.userData.geo as THREE.BufferGeometry | undefined)?.dispose();
+    for (const arm of this.arms) (arm.userData.geo as THREE.BufferGeometry | undefined)?.dispose();
     disposeFigureMaterial(this.p, this.material);
   }
 }

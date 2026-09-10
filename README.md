@@ -78,7 +78,10 @@ the rock for you too, and what they push, you see move.
   heightfield + convex-hull colliders.
 - `src/player/` — Rapier kinematic controller with auto-step and a ledge
   grab / mantle state machine; third-person boom that shortens on rock;
-  figures as packed miniatures or procedural golems, each with its own inks.
+  figures as packed miniatures or procedural golems, each with its own inks;
+  every figure but the Hound swings two arms opposite its legs, reaches
+  forward holding a prop or carrying another player, and flails when it is
+  the one being carried.
 - `src/net/` — [trystero](https://github.com/dmotz/trystero) rooms over
   WebRTC; state at 12 Hz, remote figures interpolated.
 - `src/ui/photo.ts` — photo mode.

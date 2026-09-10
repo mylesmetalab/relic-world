@@ -28,6 +28,8 @@ export type PeerState = {
   /** Hold point when carrying a player, and who (peer id) — else null. */
   h?: [number, number, number] | null;
   g?: string | null;
+  /** Holding a prop (grabbed relic/shard) — for the remote figure's reach. */
+  ho?: boolean;
 };
 
 export type Peer = { id: string; state: PeerState; lastAt: number };

@@ -266,15 +266,17 @@ export function buildGolem(kind: GolemKind, seed: number): THREE.BufferGeometry 
   return BUILDERS[kind](mulberry32(seed));
 }
 
-/** Per-kind motion flavour for the rig-free walk. */
-export const GOLEM_MOTION: Record<GolemKind, { bob: number; lean: number; float: number }> = {
-  cairn: { bob: 0.06, lean: 0.035, float: 0 },
-  shard: { bob: 0.04, lean: 0.08, float: 0 },
-  menhir: { bob: 0.03, lean: 0.05, float: 0 },
-  spire: { bob: 0.02, lean: 0.02, float: 0 },
-  dolmen: { bob: 0.09, lean: 0.06, float: 0 },
-  castle: { bob: 0.05, lean: 0.03, float: 0 },
-  totem: { bob: 0.07, lean: 0.07, float: 0 },
-  wisp: { bob: 0.03, lean: 0.0, float: 0.25 },
-  hound: { bob: 0.08, lean: 0.02, float: 0 },
+/** Per-kind motion flavour for the rig-free walk. `armLen` is in the same
+ *  local units as the body build (0 = no arms — only the hound, which reads
+ *  as a mount, not a figure with arms). `armSwing` scales the walk swing. */
+export const GOLEM_MOTION: Record<GolemKind, { bob: number; lean: number; float: number; armLen: number; armSwing: number }> = {
+  cairn: { bob: 0.06, lean: 0.035, float: 0, armLen: 0.5, armSwing: 0.85 },
+  shard: { bob: 0.04, lean: 0.08, float: 0, armLen: 0.6, armSwing: 0.6 },
+  menhir: { bob: 0.03, lean: 0.05, float: 0, armLen: 0.5, armSwing: 0.55 },
+  spire: { bob: 0.02, lean: 0.02, float: 0, armLen: 0.55, armSwing: 0.5 },
+  dolmen: { bob: 0.09, lean: 0.06, float: 0, armLen: 0.4, armSwing: 0.65 },
+  castle: { bob: 0.05, lean: 0.03, float: 0, armLen: 0.45, armSwing: 0.5 },
+  totem: { bob: 0.07, lean: 0.07, float: 0, armLen: 0.4, armSwing: 0.7 },
+  wisp: { bob: 0.03, lean: 0.0, float: 0.25, armLen: 0.35, armSwing: 0.4 },
+  hound: { bob: 0.08, lean: 0.02, float: 0, armLen: 0, armSwing: 0 },
 };
