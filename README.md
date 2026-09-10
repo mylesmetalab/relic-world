@@ -77,6 +77,10 @@ the rock for you too, and what they push, you see move.
 - **Tone picks the ink.** Lighting never shades a colour; it decides which
   flat ink lands. That is the whole style, and it is why a moving camera
   costs nothing.
+- **Deeper is stranger.** The lower cave reads different from the surface:
+  pen jitter and press misregistration grow with depth, the ceiling's brush
+  arcs pack tighter, and the bare-paper reveal dims — all driven by how far
+  below the (undug) surface you are, tunable as `depthStrange` in the panel.
 
 ## How it's built
 

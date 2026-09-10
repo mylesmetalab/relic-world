@@ -86,6 +86,12 @@ uniform float uZoneBlend;
 // normalized-height units) so a boundary follows a ragged hand-painted
 // line instead of a ruler-straight horizontal cut across the figure.
 uniform float uZoneJitter;
+// Depth below the (undug) surface, 0 at/above it ramping to 1 by ~40 m down
+// (set from main.ts each frame), scaled by uDepthStrange (a tuner knob) —
+// together they make the lower cave read jitterier and its bare-paper
+// reveal dimmer the deeper you go.
+uniform float uDepth;
+uniform float uDepthStrange;
 // Half-width (normalized height) of the box blur applied to the zone LUT
 // lookups — 0 is a hard ink boundary, larger fades one ink into the next.
 uniform float uZoneSoft;
@@ -186,6 +192,7 @@ float contourStrokes(vec2 fc, vec2 dir, float density, float weight, float seed)
 void main() {
   vec3 N = normalize(vNormalW);
   vec3 V = normalize(cameraPosition - vPosW);
+  float depthAmt = uDepth * uDepthStrange;
 
   // ── Biome pen (rock only) ─────────────────────────────────────────
   int bi = uUseBiomes > 0.5 ? biomeId(vPosW.xz) : 0;
@@ -231,7 +238,7 @@ void main() {
   float banded = min(floor(tone * steps) / max(steps - 1.0, 1.0), 1.0);
 
   float hRaw = clamp((vLocalY - uMinY) / max(uMaxY - uMinY, 1e-4), 0.0, 1.0);
-  float hJit = (vnoise(vec2(vPosW.x * 6.0 + vPosW.z * 4.0, vPosW.y * 5.0) + 2.7) - 0.5) * uZoneJitter;
+  float hJit = (vnoise(vec2(vPosW.x * 6.0 + vPosW.z * 4.0, vPosW.y * 5.0) + 2.7) - 0.5) * uZoneJitter * (1.0 + depthAmt * 2.0);
   hRaw = clamp(hRaw + hJit, 0.0, 1.0);
   float z = max(uZones, 1.0);
   float hStep = (floor(hRaw * z) + 0.5) / z;
@@ -309,8 +316,10 @@ void main() {
       ? texture2D(uInkMap, muv).r : 0.0;
     float printed = smoothstep(0.08, 0.5, max(inked, lit));
     // Bare paper carries a faint pencil under-drawing of the tone so the
-    // form reads before the ink lands.
-    vec3 pencil = mix(uPaper, uPaper * 0.82, step(tone, blackCut) * 0.6);
+    // form reads before the ink lands; the sheet itself reads dimmer the
+    // deeper below the surface it is.
+    vec3 paper = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
+    vec3 pencil = mix(paper, paper * 0.82, step(tone, blackCut) * 0.6);
     col = mix(pencil, col, printed);
   }
 
@@ -385,6 +394,11 @@ uniform float uSpeck;
 uniform float uTime;
 uniform vec3 uInk;
 uniform vec3 uPaper;
+// Depth below the surface (0..1, set from main.ts) × a tuner intensity —
+// the press runs looser (more misregistration, more bare-paper specks) the
+// deeper the page came from.
+uniform float uDepth;
+uniform float uDepthStrange;
 varying vec2 vUv;
 
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -430,12 +444,14 @@ vec3 linearToSRGB(vec3 c) {
 
 void main() {
   vec2 px = 1.0 / uResolution;
+  float depthAmt = uDepth * uDepthStrange;
   // Print-pixel coordinate: quantized so grain/tooth/dots live on the same
   // chunky grid as the upscaled colour plates.
   vec2 pp = floor(vUv * uResolution);
 
-  // Colour plates, each slightly out of register (the press).
-  vec2 o = px * uMisreg;
+  // Colour plates, each slightly out of register (the press) — looser the
+  // deeper the page is from.
+  vec2 o = px * uMisreg * (1.0 + depthAmt);
   vec3 lin;
   lin.r = texture2D(tDiffuse, vUv + o * vec2( 1.00,  0.35)).r;
   lin.g = texture2D(tDiffuse, vUv + o * vec2(-0.60, -0.85)).g;
@@ -461,10 +477,13 @@ void main() {
   float dots = halftoneDots(pp, uHalftoneAngle, uHalftoneScale, shadowAmt * uHalftone) * hasGeo;
   c *= mix(1.0, 0.88, dots);
 
-  // Paper tooth (multiplicative), specks of bare paper, grain.
+  // Paper tooth (multiplicative), specks of bare paper, grain. The sheet
+  // dims and specks thicken with depth.
   float tooth = mix(0.86, 1.02, vnoise(pp * 0.85) * 0.6 + vnoise(pp * 2.9) * 0.4);
   c *= mix(1.0, tooth, uGrain);
-  if (hash(pp + floor(uTime * 0.0)) > 1.0 - uSpeck) c = mix(c, uPaper, 0.7);
+  vec3 paper = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
+  float speck = uSpeck * (1.0 + depthAmt * 3.0);
+  if (hash(pp + floor(uTime * 0.0)) > 1.0 - speck) c = mix(c, paper, 0.7);
 
   gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
@@ -512,6 +531,10 @@ uniform float uArcSpacing;
 // Offsets every noise lookup so the environment seed reshuffles the vault
 // too, not just the rock.
 uniform float uSeed;
+// Depth below the surface (0..1, main.ts) × a tuner intensity — the deeper
+// cave packs its brush arcs tighter and dims its bare-paper reveal.
+uniform float uDepth;
+uniform float uDepthStrange;
 varying float vHeight;
 varying vec3 vPosE;
 
@@ -556,6 +579,7 @@ float vnoise(vec3 p) {
 }
 
 void main() {
+  float depthAmt = uDepth * uDepthStrange;
   vec3 s = vec3(uSeed * 0.37, uSeed * 0.11, uSeed * 0.23);
   // Broad blue tone: height + stretched noise, posterized to 3 levels.
   vec3 p = vPosE * vec3(0.55, 1.6, 0.55) + s;
@@ -580,7 +604,9 @@ void main() {
   float r = length(d);
   float ang = atan(d.y, d.x);
   float warp = (vnoise(vPosE * 0.9 + 41.0 + s) - 0.5) * 0.5;
-  float ring = fract(r / max(uArcSpacing, 0.1) + warp);
+  // Deeper cave: rings pack tighter, so more of them recede into the tunnel.
+  float arcSpacing = uArcSpacing / (1.0 + depthAmt * 1.5);
+  float ring = fract(r / max(arcSpacing, 0.1) + warp);
   float stroke = step(0.02, ring) * (1.0 - step(0.21, ring));
   float gate = step(0.3, vnoise(vPosE * vec3(1.6, 0.6, 1.6) + 7.0 + s));
   float fray = step(0.32, vnoise(vec3(ang * 14.0, r * 4.0, vPosE.z * 0.7) + 19.0 + s));
@@ -600,7 +626,8 @@ void main() {
     float inked = (muv.x >= 0.0 && muv.x <= 1.0 && muv.y >= 0.0 && muv.y <= 1.0)
       ? texture2D(uInkMap, muv).r : 0.0;
     float printed = smoothstep(0.08, 0.5, max(inked, lit));
-    col = mix(uPaper, col, printed);
+    vec3 paper = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
+    col = mix(paper, col, printed);
   }
 
   gl_FragColor = vec4(col, 1.0);

@@ -161,6 +161,25 @@ the computed page size) and screenshotted it — gutters, the wide+two-small
 layout and the caption strip all present. Next up per the backlog: deeper
 is stranger.
 
+### Tenth pass (2026-09-10, later)
+Deeper is stranger: a `uDepth` uniform (0 at/above the undug surface, 1 by
+~40 m below it — `src/main.ts` computes it each frame from
+`terrain.surface(x,z) − player.y`) and a `uDepthStrange` intensity knob (the
+new `depthStrange` tunable in `Tunables.press`, sliderized in
+`src/ui/tune.ts`, pushed by `applyConfig`) land on the rock/figure toon
+material, the ceiling material and the press pass (`src/render/shaders.ts`,
+`src/render/pipeline.ts`'s new `setDepth`). Their product grows the zone-fill
+jitter (`TOON_FRAGMENT`), the press misregistration and paper-speck rate
+(`INK_FRAGMENT`), shrinks the ceiling's brush-arc spacing so rings pack
+tighter (`VAULT_FRAGMENT`), and dims the bare-paper reveal everywhere the ink
+map still shows blank sheet. Verified at `?seed=7`: typecheck clean;
+teleported the player to a Cathedral spot 48 m below the surface and read
+`uDepth` back off `rockMat`/`ceilMat`/`inkPass` as `1` (clamped), then to a
+spot 20 m down and read `≈0.52` — confirms the linear depth ramp; screenshots
+at the surface (uDepth 0, paper-bright open sky) and deep in the lower cave
+(uDepth 1, denser hatching, dimmer bare-paper reveal) show the read
+diverging. Next up per the backlog: "hatched rock is grip".
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { applyConfig, createPipeline, renderFrame, resizePipeline, setWorldSeed, MAX_LIGHTS, INK_BLACK, PAPER, type Torch } from "./render/pipeline";
+import { applyConfig, createPipeline, renderFrame, resizePipeline, setWorldSeed, setDepth, MAX_LIGHTS, INK_BLACK, PAPER, type Torch } from "./render/pipeline";
 import { COLORWAYS } from "./render/palette";
 import { initPhysics, rayDistance, rayHit } from "./physics/world";
 import { Terrain, type Level } from "./world/terrain";
@@ -626,6 +626,9 @@ async function boot(): Promise<void> {
     // Judged against the undug surface, so a pit you are digging is still daylit.
     const onSurface = player.position.y > terrain.surface(player.position.x, player.position.z) - 6;
     (p.scene.background as THREE.Color).setHex(onSurface ? PAPER : INK_BLACK);
+    // Deeper is stranger: 0 at/above the surface, 1 by ~40 m below it.
+    const depthBelow = terrain.surface(player.position.x, player.position.z) - player.position.y;
+    setDepth(p, Math.min(1, Math.max(0, depthBelow / 40)));
     renderFrame(p, dt);
     const heads: Array<{ id: string; head: THREE.Vector3; text: string }> = [];
     if (!cam.firstPerson) heads.push({ id: "me", head: tmp.set(player.position.x, player.position.y + figure.height + 0.35, player.position.z).clone(), text: chat.outgoing() });

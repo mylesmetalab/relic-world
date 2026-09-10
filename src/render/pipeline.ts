@@ -146,6 +146,8 @@ function makeToonMaterial(
       uCracks: { value: opts.cracks },
       uFillDir: { value: new THREE.Vector3(0.2, -1, 0.45) },
       uFill: { value: opts.fill },
+      uDepth: { value: 0 },
+      uDepthStrange: { value: 1 },
     },
   });
 }
@@ -261,6 +263,8 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pip
       uArcSpacing: { value: 1.6 },
       uSeed: { value: 0 },
       uMeshY: { value: 0 },
+      uDepth: { value: 0 },
+      uDepthStrange: { value: 1 },
     },
   });
 
@@ -300,6 +304,8 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pip
       uTime: { value: 0 },
       uInk: { value: new THREE.Color(INK_BLACK) },
       uPaper: { value: new THREE.Color(PAPER) },
+      uDepth: { value: 0 },
+      uDepthStrange: { value: 1 },
     },
     vertexShader: INK_VERTEX,
     fragmentShader: INK_FRAGMENT,
@@ -323,6 +329,7 @@ export function applyConfig(p: Pipeline): void {
     const u = m.uniforms;
     u.uBiomeScale.value = biomeScale();
     if (u.uPenA) { u.uPenA.value = pens.a; u.uPenB.value = pens.b; }
+    u.uDepthStrange.value = P.depthStrange;
   }
   BIOMES.forEach((b, i) => writeLut(p.biomeRamps, b.ramp, i));
   const r = p.rockMat.uniforms;
@@ -343,7 +350,17 @@ export function applyConfig(p: Pipeline): void {
   const k = p.inkPass.uniforms;
   k.uMisreg.value = P.misreg; k.uEdgeW.value = P.edgeW; k.uDepthCut.value = P.depthCut; k.uNormalCut.value = P.normalCut;
   k.uGrain.value = P.grain; k.uSpeck.value = P.speck; k.uHalftone.value = P.halftone; k.uHalftoneScale.value = P.halftoneScale; k.uHalftoneAngle.value = P.halftoneAngle;
+  k.uDepthStrange.value = P.depthStrange;
   p.printScale = P.printScale;
+}
+
+/** How far below the (undug) surface the read should be — 0 at/above it,
+ *  growing to 1 by ~40 m down (main.ts computes this from `terrain.surface`
+ *  and the player's y each frame). Drives pen jitter, press misregistration,
+ *  ceiling arc density and paper dimming together, scaled by `depthStrange`. */
+export function setDepth(p: Pipeline, depth: number): void {
+  for (const m of [p.rockMat, p.ceilMat, ...p.figureMats]) m.uniforms.uDepth.value = depth;
+  p.inkPass.uniforms.uDepth.value = depth;
 }
 
 export function setWorldSeed(p: Pipeline, seed: number): void {
