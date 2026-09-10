@@ -810,6 +810,64 @@ twenty-third pass for full detail.
 
 ---
 
+## 19. Getting knocked down
+
+**Goal:** a hard fall already gives weight — camera thump, ink-chip puff,
+a brief no-input stumble (brief 9). Extend the exact same feedback to a
+second trigger: getting struck by something fast passing close by — a
+thrown prop, or a thrown/flung player barrelling into you. This is a
+variation on brief 9's existing code, not a new system — reuse it.
+
+- `src/main.ts`'s hard-landing block (around where `wasGrounded`/`vyBefore`
+  are checked, roughly: `if (-vyBefore > P.landHardSpeed) { const k = ...;
+  cam.thump(...); digMark.burst(...); player.stumbleT = ...; }`) is where
+  the actual feedback lives today, inline, only reachable from a landing.
+  Extract it into a small reusable helper (e.g. `applyImpact(k: number)`
+  taking the same 0..1 magnitude scale the landing code already computes)
+  so both the landing site and two new checks below can call it.
+- **Thrown-prop check:** `src/world/props.ts`'s `Prop.lastV` already tracks
+  each dynamic prop's velocity frame-to-frame for the existing knock-sound
+  system (`dv = hypot(v - lastV)`, `onKnock`). Each frame in `main.ts`, for
+  props near the local player (within a small radius — the player's capsule
+  plus a bit), check if the prop's current speed exceeds a new threshold;
+  if so, call `applyImpact` scaled by that speed, same as a hard landing
+  scales by how far past `landHardSpeed` the fall was.
+- **Thrown/fast-player check:** remote figures (`Remote` in `main.ts`) only
+  track position today (`r.pos`, lerped toward the synced position each
+  frame), not velocity — derive a simple per-frame velocity from the
+  position delta (previous vs. current `r.pos`, divided by `dt`) rather
+  than adding anything to the net protocol. If a remote's derived speed
+  exceeds a threshold AND their position is within a small radius of the
+  local player, call `applyImpact`. This is naturally symmetric and needs
+  no new net message: it runs identically on every client, checking its own
+  position against every OTHER player's synced position — so if player A
+  gets thrown into player B, B's own client detects A's high speed nearby
+  and stumbles, with no coordination required.
+- New tunables in `src/world/config.ts`'s `player` section (mirror
+  `landHardSpeed`'s naming) — something like `impactPropSpeed`,
+  `impactPlayerSpeed`, `impactRadius` — with slider ranges in
+  `src/ui/tune.ts`.
+- No damage, no health, no fail state — same as every other physics
+  interaction in this game. This is purely the existing camera-thump/chip-
+  puff/stumble feedback, retriggered from a new cause.
+
+Files: `src/main.ts` (extract `applyImpact`, the two new per-frame proximity
+checks), `src/world/config.ts` + `src/ui/tune.ts` (new tunables).
+
+Verify: `?seed=7`. Grab a shard/prop and throw it directly at yourself or
+have it bounce back — or simpler, spawn/throw a prop past the player at
+high speed via `__world` — and confirm `player.stumbleT` engages and the
+camera/chip feedback fires, matching a hard landing's look. Two-tab test —
+have one tab carry-and-throw the other player (`grabPlayer`/`throwPlayer`,
+already wired) so the thrown player flies toward the other's position, and
+confirm the SECOND player (the one not thrown) also stumbles as the thrown
+one passes close by; recent passes (17, 18) found this sandbox's WebRTC
+actually works, so attempt this for real. Confirm a normal, moderate walk
+into another player or a slow-moving prop does NOT trigger it (the
+threshold should exclude ordinary contact).
+
+---
+
 ## How to work here
 
 - Repo `~/Sites/relic-world`, public `mylesmetalab/relic-world`. Push to
