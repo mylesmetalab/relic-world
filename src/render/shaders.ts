@@ -32,14 +32,48 @@ varying vec3 vNormalW;
 varying vec3 vPosW;
 varying float vLocalY;
 varying float vDepth;
+// Instanced rocks (src/world/chunks.ts) carry their own per-instance hatch
+// anchor instead of the shared uHatchPhase/uHatchSeed uniform an
+// onBeforeRender callback can only set correctly for ONE mesh at a time —
+// see the matching branch in TOON_FRAGMENT.
+#ifdef USE_INSTANCE_HATCH
+attribute float instanceHatchSeed;
+uniform vec2 uPrintSize;
+varying vec2 vHatchPhase;
+varying float vHatchSeed;
+#endif
 
 void main() {
-  vec4 worldPos = modelMatrix * vec4(position, 1.0);
+  vec3 transformed = position;
+  vec3 objectNormal = normal;
+#ifdef USE_INSTANCING
+  // three.js auto-declares an instanceMatrix attribute for any InstancedMesh;
+  // apply it ourselves since this vertex shader is fully custom (no built-in
+  // instancing_vertex / defaultnormal_vertex chunks). Normal transform
+  // follows three's own non-uniform-scale trick (divide by each row's
+  // squared length before applying) — exact for the shear-free
+  // scale+rotate+translate matrices chunks.ts builds.
+  transformed = (instanceMatrix * vec4(transformed, 1.0)).xyz;
+  mat3 im = mat3(instanceMatrix);
+  objectNormal /= vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2]));
+  objectNormal = im * objectNormal;
+#endif
+  vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
   vec4 mv = viewMatrix * worldPos;
   vPosW = worldPos.xyz;
-  vLocalY = position.y;
+  vLocalY = transformed.y;
   vDepth = -mv.z;
-  vNormalW = normalize(mat3(modelMatrix) * normal);
+  vNormalW = normalize(mat3(modelMatrix) * objectNormal);
+#ifdef USE_INSTANCE_HATCH
+  // Project the INSTANCE's own origin (not this vertex) so every vertex of
+  // one instance agrees on one hatch anchor, exactly like the per-mesh
+  // onBeforeRender path anchors on the mesh's world origin.
+  vec3 originLocal = instanceMatrix[3].xyz;
+  vec4 originClip = projectionMatrix * viewMatrix * modelMatrix * vec4(originLocal, 1.0);
+  vec2 originNdc = originClip.xy / originClip.w;
+  vHatchPhase = (originNdc * 0.5 + 0.5) * uPrintSize;
+  vHatchSeed = instanceHatchSeed;
+#endif
   gl_Position = projectionMatrix * mv;
 }
 `;
@@ -129,6 +163,10 @@ uniform float uStipple;
 // strokes wrap arms and folds.
 uniform vec2 uHatchPhase;
 uniform float uHatchSeed;
+#ifdef USE_INSTANCE_HATCH
+varying vec2 vHatchPhase;
+varying float vHatchSeed;
+#endif
 uniform float uPitchScale;
 uniform float uFormFollow;
 // Finer pen above uHeadFrom (normalized height): the reference hatches the
@@ -193,6 +231,13 @@ void main() {
   vec3 N = normalize(vNormalW);
   vec3 V = normalize(cameraPosition - vPosW);
   float depthAmt = uDepth * uDepthStrange;
+#ifdef USE_INSTANCE_HATCH
+  vec2 hatchPhase = vHatchPhase;
+  float hatchSeed = vHatchSeed;
+#else
+  vec2 hatchPhase = uHatchPhase;
+  float hatchSeed = uHatchSeed;
+#endif
 
   // ── Biome pen (rock only) ─────────────────────────────────────────
   int bi = uUseBiomes > 0.5 ? biomeId(vPosW.xz) : 0;
@@ -228,7 +273,7 @@ void main() {
     // Mottle lives on the ROCK, not the screen: world-space noise offset by
     // the object's own hatch seed, so each boulder carries its own blotches
     // and nothing slides as the camera moves.
-    vec2 wp = vPosW.xz + vPosW.y * 0.7 + uHatchSeed * 11.0;
+    vec2 wp = vPosW.xz + vPosW.y * 0.7 + hatchSeed * 11.0;
     float b = vnoise(wp * 1.1) * 0.6 + vnoise(wp * 0.33 + 4.0) * 0.4;
     tone = clamp(tone - uBreak * (0.75 - b), 0.0, 1.0);
   }
@@ -273,8 +318,8 @@ void main() {
   float follow = formFollow * smoothstep(0.1, 0.45, tl);
   float pitchPx = max(uPitch * pitchScale * mix(1.0, uHeadPitch, step(uHeadFrom, hRaw)), 1.0);
   if (uHatchStyle < 0.5) {
-    vec2 sp = (fc - uHatchPhase) / pitchPx;
-    float a0 = 0.62 + hatchRot + uHatchSeed;
+    vec2 sp = (fc - hatchPhase) / pitchPx;
+    float a0 = 0.62 + hatchRot + hatchSeed;
     vec2 d0 = vec2(cos(a0), sin(a0));
     vec2 tdir = tang / max(tl, 1e-4);
     if (dot(tdir, d0) < 0.0) tdir = -tdir;          // keep the blend from cancelling
@@ -283,11 +328,11 @@ void main() {
     if (tone < hatchRange * 0.65) ink = max(ink, ruleDir(sp, rot2(d1, -1.37), 1.0, w));
     if (tone < hatchRange * 0.35) ink = max(ink, ruleDir(sp, rot2(d1,  0.93), 1.3, w));
   } else {
-    vec2 fallback = vec2(cos(0.62 + hatchRot + uHatchSeed), sin(0.62 + hatchRot + uHatchSeed));
+    vec2 fallback = vec2(cos(0.62 + hatchRot + hatchSeed), sin(0.62 + hatchRot + hatchSeed));
     vec2 dir = normalize(mix(fallback, tang / max(tl, 1e-4), max(follow, 0.15 * smoothstep(0.1, 0.45, tl))));
     float t = clamp((hatchRange - tone) / max(hatchRange - blackCut, 1e-3), 0.0, 1.0);
     float density = 1.0 / pitchPx;
-    vec2 fp = fc - uHatchPhase;
+    vec2 fp = fc - hatchPhase;
     ink = max(ink, contourStrokes(fp, dir, density, w * 1.6, 1.0) * smoothstep(0.0, 0.2, t));
     ink = max(ink, contourStrokes(fp, vec2(-dir.y, dir.x), density * 0.9, w * 1.3, 2.0) * smoothstep(0.55, 0.8, t));
   }
@@ -351,8 +396,20 @@ export const ND_VERTEX = /* glsl */ `
 varying vec3 vN;
 varying float vDepth;
 void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vN = normalize(normalMatrix * normal);
+  vec3 transformed = position;
+  vec3 objectNormal = normal;
+#ifdef USE_INSTANCING
+  // scene.overrideMaterial = ndMat during the ND pass, so instanced rocks
+  // draw through this material too — apply instanceMatrix ourselves (this
+  // shader predates instancing and doesn't use the built-in chunks that do
+  // it automatically), same non-uniform-scale normal trick as TOON_VERTEX.
+  transformed = (instanceMatrix * vec4(transformed, 1.0)).xyz;
+  mat3 im = mat3(instanceMatrix);
+  objectNormal /= vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2]));
+  objectNormal = im * objectNormal;
+#endif
+  vec4 mv = modelViewMatrix * vec4(transformed, 1.0);
+  vN = normalize(normalMatrix * objectNormal);
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
 }

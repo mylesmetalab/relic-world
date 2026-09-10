@@ -333,6 +333,43 @@ This is the hardest of the new briefs (real per-instance shader math) — if
 the projection math doesn't work out after two real attempts, stop and
 report rather than ship visibly broken hatching.
 
+**Built (2026-09-10):** shipped as designed, plus a real bug caught and
+fixed by measuring rather than trusting the design. The prototype pool
+(`rockPrototypes()` in `terrain.ts`, 10 unit-scale shapes), per-instance
+scale/hull, `InstancedMesh` batching, and the GLSL hatch-anchor projection
+(`USE_INSTANCE_HATCH` in `shaders.ts`/`pipeline.ts`) all landed as specced —
+including fixing up the ND pass's own vertex shader, which predates
+instancing and needed its own manual `instanceMatrix` application (missing
+this would have silently corrupted the ND key-plate's normals/depth for
+every rock once instanced).
+
+The first real build **made draw calls worse, not better**, and this was
+caught by actually measuring rather than trusting the design: `InstancedMesh`
+needs `computeBoundingSphere()` called explicitly after its instance
+matrices are set, or frustum culling falls back to the base geometry's tiny,
+near-origin bounding sphere — every batch either always drew (no win) or,
+worse, wrongly passed the cull test near world origin regardless of where
+its instances actually were. Measured directly (stash the diff, reload,
+compare `renderer.info.render.calls` at an identical player position/camera
+angle before and after): missing the call, rock draw calls went from 51 (old
+per-mesh code) to 59 (new, "instanced") at one test spot — confirmed broken,
+not just underwhelming. Added the `computeBoundingSphere()` call and
+re-measured clean.
+
+A second, independent finding from the same profiling: bucketing per
+(chunk, level, prototype) was too fine — most chunk-levels only have a
+handful of rocks spread across 10 prototypes, so most buckets ended up as
+singletons, barely beating one-mesh-per-rock. Fixed by pooling all three
+levels' rocks into one set of per-chunk buckets (rendering never cared
+which level a transform came from — only `scatterRocks`' placement logic
+did). Final, clean, apples-to-apples measurement (same exact player
+position/camera angle, same seed, stashing the whole diff for the "before"
+run): **202 → 157 total draw calls** (≈22%) in a dense Glacier-biome
+stalagmite cluster — visually confirmed correct (hatching still reads
+per-rock, no shared/smeared pattern) and collision-confirmed (walked into
+the cluster, stayed grounded, no clipping through, no physics-escape
+rescue firing).
+
 ## 14. Dig swing
 
 **Goal:** when you (or a peer) swing a pick to dig, the figure's arm

@@ -119,7 +119,10 @@ same as always.
   reach, the ink map, and per-biome ramps and pens.
 - `src/world/` — floor, ceiling and solidity fields; biome field (the same
   noise in TypeScript and GLSL); 24 m chunks streamed around the player with
-  heightfield + convex-hull colliders.
+  heightfield + convex-hull colliders. Rocks are drawn as `InstancedMesh`
+  batches (one per prototype shape per chunk, from a fixed pool of 10) with
+  hatch anchoring computed per-instance in-shader, not one mesh per rock —
+  colliders stay one convex hull per rock either way.
 - `src/player/` — Rapier kinematic controller with auto-step and a ledge
   grab / mantle state machine; third-person boom that shortens on rock;
   figures as packed miniatures or procedural golems, each with its own inks;

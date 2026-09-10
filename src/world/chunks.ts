@@ -1,9 +1,11 @@
 import * as THREE from "three";
 import { anchorHatch, type Pipeline } from "../render/pipeline";
 import { addConvexHull, addHeightfield, removeStatic, type Physics, type StaticHandle } from "../physics/world";
-import { CELLS, CHUNK, Terrain, gridGeometry, sampleGrid, scatterRocks, type Level } from "./terrain";
+import { CELLS, CHUNK, Terrain, gridGeometry, sampleGrid, scatterRocks, rockPrototypes, type Level, type RockSpec } from "./terrain";
 import { hash3 } from "./noise";
 import { Props, type ChunkProps } from "./props";
+
+const UP = new THREE.Vector3(0, 1, 0);
 
 type LevelPart = { mesh: THREE.Mesh | null; collider: StaticHandle };
 
@@ -15,6 +17,10 @@ type Chunk = {
   group: THREE.Group;
   statics: StaticHandle[];
   geometries: THREE.BufferGeometry[];
+  /** One InstancedMesh per prototype shape actually used, per level — each
+   *  needs its own `.dispose()` (frees its `instanceMatrix`/instanced-attribute
+   *  GPU buffers) on top of its (per-chunk clone) geometry's. */
+  rockMeshes: THREE.InstancedMesh[];
   props: ChunkProps;
   /** Floors by level (0 surface, 1 gallery or null, 2 lower). */
   floors: [LevelPart, LevelPart | null, LevelPart];
@@ -224,23 +230,67 @@ export class ChunkManager {
       group.add(ceilUpper);
     }
 
+    // Rocks: batch every rock sharing a prototype shape into one
+    // InstancedMesh per CHUNK (all three levels pooled together — rendering
+    // doesn't care which level a transform came from, only scatterRocks'
+    // placement logic did) instead of one THREE.Mesh per rock. Pooling
+    // across levels, not just within one, matters a lot in practice: a
+    // typical chunk only has a handful of rocks per level, so bucketing by
+    // (level, prototype) left most buckets as singletons — measured directly
+    // in this pass, that barely moved draw calls at all. Per-rock convex-hull
+    // colliders are unaffected either way (Rapier doesn't care how rendering
+    // batches things). Hatch anchoring for these instances is done in-shader
+    // (USE_INSTANCE_HATCH on rockMatInstanced) via an instanceHatchSeed
+    // attribute, since a shared onBeforeRender uniform can't anchor more than
+    // one instance per draw call.
+    const rockMeshes: THREE.InstancedMesh[] = [];
+    const protos = rockPrototypes();
+    const byProto = new Map<number, RockSpec[]>();
     for (const level of [2, 1, 0] as Level[]) {
       if (level === 1 && !anyGallery) continue;
       for (const r of scatterRocks(T, cx, cz, chunkSeed, level)) {
-        const mesh = new THREE.Mesh(r.geometry, this.p.rockMat);
-        mesh.position.copy(r.position);
-        mesh.rotation.y = r.rotationY;
-        anchorHatch(this.p, mesh, r.hatchSeed);
-        group.add(mesh);
-        geometries.push(r.geometry);
+        const bucket = byProto.get(r.protoIndex);
+        if (bucket) bucket.push(r); else byProto.set(r.protoIndex, [r]);
+      }
+    }
+    for (const [protoIndex, rocks] of byProto) {
+      // Clone the prototype (a tiny geometry, a few dozen verts) rather
+      // than reuse it directly: this InstancedMesh needs its OWN
+      // instanceHatchSeed attribute, and setting one directly on the
+      // shared prototype would make every other chunk's InstancedMesh for
+      // this same shape read this chunk's hatch seeds.
+      const geo = protos[protoIndex]!.clone();
+      const im = new THREE.InstancedMesh(geo, this.p.rockMatInstanced, rocks.length);
+      const hatchSeeds = new Float32Array(rocks.length);
+      const m = new THREE.Matrix4();
+      const q = new THREE.Quaternion();
+      rocks.forEach((r, i) => {
+        q.setFromAxisAngle(UP, r.rotationY);
+        m.compose(r.position, q, r.scale);
+        im.setMatrixAt(i, m);
+        hatchSeeds[i] = r.hatchSeed;
         const h = addConvexHull(this.ph, r.hull, r.position.x, r.position.y, r.position.z, r.rotationY);
         if (h) statics.push(h);
-      }
+      });
+      geo.setAttribute("instanceHatchSeed", new THREE.InstancedBufferAttribute(hatchSeeds, 1));
+      im.instanceMatrix.needsUpdate = true;
+      // Without this, frustum culling falls back to the base geometry's own
+      // (small, near-origin) bounding sphere — correct for a lone rock's own
+      // Mesh, wrong for an InstancedMesh whose instances are scattered across
+      // a whole chunk. computeBoundingSphere() on an InstancedMesh accounts
+      // for every instance's transform; skipping it either always draws (no
+      // culling win at all) or, worse, culls batches that are genuinely in
+      // view. Confirmed empirically: without this call the instanced rocks
+      // path drew MORE draw calls than the one-mesh-per-rock code it replaced.
+      im.computeBoundingSphere();
+      group.add(im);
+      geometries.push(geo);
+      rockMeshes.push(im);
     }
 
     this.root.add(group);
     const chunk: Chunk = {
-      key, cx, cz, group, statics, geometries, props: this.props.spawn(cx, cz, chunkSeed),
+      key, cx, cz, group, statics, geometries, rockMeshes, props: this.props.spawn(cx, cz, chunkSeed),
       floors: [surface, galleryPart, lower], ceilLower, ceilUpper, gallery,
     };
     this.recutCeilings(chunk);
@@ -249,6 +299,7 @@ export class ChunkManager {
 
   private dispose(chunk: Chunk): void {
     this.root.remove(chunk.group);
+    for (const m of chunk.rockMeshes) m.dispose();
     for (const g of chunk.geometries) g.dispose();
     chunk.ceilLower?.geometry.dispose();
     chunk.ceilUpper?.geometry.dispose();

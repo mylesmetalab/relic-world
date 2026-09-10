@@ -490,11 +490,20 @@ export function gridGeometry(
 }
 
 export type RockSpec = {
-  geometry: THREE.BufferGeometry;
+  /** Index into `rockPrototypes()` — which baked unit (radius=1, height=1)
+   *  shape this instance reuses. */
+  protoIndex: number;
+  /** Non-uniform instance scale applied to the unit prototype: (radius,
+   *  height, radius) — reproduces exactly what building a unique geometry at
+   *  this radius/height used to look like, since `rockGeometry`'s per-vertex
+   *  jitter/lean is linear in radius and height. */
+  scale: THREE.Vector3;
   position: THREE.Vector3;
   rotationY: number;
   hatchSeed: number;
-  /** Convex hull points in local space (Float32Array xyz). */
+  /** Convex hull points in local space (Float32Array xyz), already scaled to
+   *  this rock's actual size — physics doesn't care how rendering batches
+   *  things, so this stays a real per-rock hull exactly as before. */
   hull: Float32Array;
 };
 
@@ -517,10 +526,27 @@ export function rockGeometry(rng: () => number, radius: number, height: number):
   return geo;
 }
 
+/** Fixed pool of shapes every rock instance picks from instead of a unique
+ *  geometry — built once (world-seed-independent: shape variety, not
+ *  placement, so the pool doesn't need to vary by world) at radius=1,
+ *  height=1 so `chunks.ts` can batch same-prototype rocks into one
+ *  `InstancedMesh` and recover the real per-rock size with a non-uniform
+ *  instance scale. */
+const ROCK_PROTO_COUNT = 10;
+let rockPrototypeCache: THREE.BufferGeometry[] | null = null;
+export function rockPrototypes(): THREE.BufferGeometry[] {
+  if (!rockPrototypeCache) {
+    const rng = mulberry32(0xb0a7);
+    rockPrototypeCache = Array.from({ length: ROCK_PROTO_COUNT }, () => rockGeometry(rng, 1, 1));
+  }
+  return rockPrototypeCache;
+}
+
 /** Scatter boulders and stalagmites over a chunk on one level, seated on that
  *  level's floor, avoiding walls and the spawn column. Deterministic. */
 export function scatterRocks(terrain: Terrain, cx: number, cz: number, chunkSeed: number, level: Level): RockSpec[] {
   const rng = mulberry32(chunkSeed ^ (level === 1 ? 0x9e3779b9 : level === 0 ? 0x27d4eb2f : 0));
+  const protos = rockPrototypes();
   const out: RockSpec[] = [];
   const centre = terrain.biome(cx * CHUNK + CHUNK / 2, cz * CHUNK + CHUNK / 2);
   const count = Math.round(centre.rocks * (0.7 + rng() * 0.6) * (level === 2 ? 1 : 0.5));
@@ -534,10 +560,21 @@ export function scatterRocks(terrain: Terrain, cx: number, cz: number, chunkSeed
     const tall = rng() < b.tallShare;
     const radius = tall ? 0.25 + rng() * 0.5 : 0.35 + rng() * 1.1;
     const height = tall ? 1.8 + rng() * 3.2 : 0.35 + rng() * 1.4;
-    const geometry = rockGeometry(rng, radius, height);
+    const protoIndex = Math.floor(rng() * protos.length);
+    const proto = protos[protoIndex]!;
     const y = terrain.levelAt(level, x, z) + height / 2 - Math.min(0.25, height * 0.2);
-    const hullPts = (geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
-    out.push({ geometry, position: new THREE.Vector3(x, y, z), rotationY: rng() * Math.PI * 2, hatchSeed: (rng() - 0.5) * 1.4, hull: hullPts });
+    const protoPts = (proto.attributes.position as THREE.BufferAttribute).array as Float32Array;
+    const hull = new Float32Array(protoPts.length);
+    for (let k = 0; k < protoPts.length; k += 3) {
+      hull[k] = protoPts[k]! * radius;
+      hull[k + 1] = protoPts[k + 1]! * height;
+      hull[k + 2] = protoPts[k + 2]! * radius;
+    }
+    out.push({
+      protoIndex, scale: new THREE.Vector3(radius, height, radius),
+      position: new THREE.Vector3(x, y, z), rotationY: rng() * Math.PI * 2,
+      hatchSeed: (rng() - 0.5) * 1.4, hull,
+    });
   }
   return out;
 }

@@ -42,6 +42,12 @@ export type Pipeline = {
   ndMat: THREE.ShaderMaterial;
   /** Light-banded rock material (floor, boulders). */
   rockMat: THREE.ShaderMaterial;
+  /** Same look as `rockMat`, for `InstancedMesh` rock batches — hatch
+   *  anchoring moves from the shared onBeforeRender uniform into a per-
+   *  instance attribute (`USE_INSTANCE_HATCH`), since all instances in one
+   *  draw call can't take turns mutating one uniform. Shares `rockMat`'s
+   *  uniforms object by reference so every tunable stays in sync. */
+  rockMatInstanced: THREE.ShaderMaterial;
   /** Unlit posterized ceiling with brush arcs. */
   ceilMat: THREE.ShaderMaterial;
   hullMat: THREE.ShaderMaterial;
@@ -152,6 +158,10 @@ function makeToonMaterial(
       uFill: { value: opts.fill },
       uDepth: { value: 0 },
       uDepthStrange: { value: 1 },
+      // Print-target size in px — only read by the USE_INSTANCE_HATCH branch
+      // (instanced rocks project their own hatch anchor in-shader instead of
+      // via anchorHatch's onBeforeRender); kept up to date by resizePipeline.
+      uPrintSize: { value: new THREE.Vector2(2, 2) },
     },
   });
 }
@@ -241,6 +251,16 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6, ndHa
   const rockMat = makeToonMaterial(bgPaletteTex, bgPaletteTex, shared, {
     bands: 3, rampScale: ROCK_RAMP_SCALE, shadowGamma: 1.25, colorMode: 1, rim: 0, fog: 0.5, fogTone: 0.4, brk: 0.3, pitchScale: 1.3, cracks: 0.55, fill: 0,
   }, true, true);
+  // Same shader source and uniforms (shared by reference) as rockMat, just
+  // compiled with USE_INSTANCE_HATCH so the hatch anchor comes from the
+  // per-instance attribute chunks.ts sets up rather than the uniform
+  // anchorHatch's onBeforeRender mutates per-mesh.
+  const rockMatInstanced = new THREE.ShaderMaterial({
+    vertexShader: TOON_VERTEX,
+    fragmentShader: TOON_FRAGMENT,
+    uniforms: rockMat.uniforms,
+    defines: { USE_INSTANCE_HATCH: "" },
+  });
 
   const ceilMat = new THREE.ShaderMaterial({
     vertexShader: VAULT_VERTEX,
@@ -320,7 +340,7 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6, ndHa
 
   return {
     renderer, scene, camera, composer, inkPass, ndRT, ndMat,
-    rockMat, ceilMat, hullMat, figureMats: new Set(), bgPaletteTex, biomeRamps, inkMap,
+    rockMat, rockMatInstanced, ceilMat, hullMat, figureMats: new Set(), bgPaletteTex, biomeRamps, inkMap,
     ndHidden: new Set(), torches: [], printScale, printW: 2, printH: 2, lastW: 0, lastH: 0, lastPrintScale: 0,
     ndScale: ndHalfRes ? 0.5 : 1, time: 0,
   };
@@ -414,6 +434,7 @@ export function resizePipeline(p: Pipeline, w: number, h: number): void {
   p.ndRT.setSize(ndW, ndH);
   p.printW = rw;
   p.printH = rh;
+  p.rockMat.uniforms.uPrintSize.value.set(rw, rh);
   p.inkPass.uniforms.uResolution.value.set(rw, rh);
   p.camera.aspect = w / h;
   p.camera.updateProjectionMatrix();

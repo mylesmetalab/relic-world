@@ -432,6 +432,28 @@ pointer) still resolves `low`, and a rebuilt/reinstalled Simulator app
 full density (61 fps in the HUD, no softened hatching). No web build
 behavior changed (native-only branch), so no Metalab Sites republish.
 
+### Nineteenth pass (2026-09-10, latest)
+Brief 13, instance the rocks — the top item on Myles's own priority ranking
+of "what's next," since every rock was still its own draw call and the ND
+pass doubles that cost. Shipped as specced (prototype pool, per-instance
+scale/hull, `InstancedMesh` batching, GLSL hatch-anchor projection via
+`USE_INSTANCE_HATCH`, including a fix to the ND pass's own vertex shader for
+manual instance-matrix application), but the build genuinely made draw
+calls *worse* at first — caught only by measuring, not by trusting the
+design: `InstancedMesh` needs an explicit `computeBoundingSphere()` call
+after its instances are placed, or frustum culling uses the base geometry's
+tiny near-origin bounds instead of the real spread, which either never
+culls or wrongly culls batches that are genuinely in view. Fixed, then
+profiled again and found a second issue: bucketing per (chunk, level,
+prototype) left most buckets as singletons given how few rocks a level
+actually has, so pooled all three levels' rocks per chunk instead (level
+only ever mattered to placement, never to rendering). Final honest,
+apples-to-apples measurement (same seed/position/camera angle, the whole
+diff stashed for the "before" run): 202 → 157 total draw calls (≈22%) in a
+dense Glacier stalagmite cluster, visually confirmed correct (per-rock
+hatching intact, no smearing) and collision-confirmed (walked into the
+cluster, no clipping, no physics-escape rescue firing).
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
