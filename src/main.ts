@@ -92,7 +92,7 @@ async function boot(): Promise<void> {
   }
 
   const input = new Input(canvas);
-  const player = new PlayerController(ph, spawn);
+  const player = new PlayerController(ph, spawn, terrain);
   const cam = new PlayerCamera(p.camera, ph);
   const figure = new Figure(p);
   const sound = new Sound();

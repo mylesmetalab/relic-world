@@ -2,6 +2,8 @@ import * as THREE from "three";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import type { Physics } from "../physics/world";
 import { rayDistance } from "../physics/world";
+import type { Terrain } from "../world/terrain";
+import { CFG } from "../world/config";
 
 /**
  * Kinematic character controller. Rapier resolves the capsule against the
@@ -14,6 +16,11 @@ import { rayDistance } from "../physics/world";
  * reach height with headroom above it; if there is one and you have the
  * stamina, the body is carried up and over it along an eased path while
  * physics is bypassed. Stamina refills on the ground.
+ *
+ * A sheer-face wall climb only grips where the rock reads as hatched, not
+ * smooth black fill: `terrain.solidity(x,z) < CFG.world.climbSolidity`.
+ * Pillar cores (solidity near 1) are too smooth to grip, so the look tells
+ * you where you can climb.
  */
 
 const RADIUS = 0.35;
@@ -57,7 +64,7 @@ export class PlayerController {
   private vy = 0;
   private readonly tmp = new THREE.Vector3();
 
-  constructor(private readonly ph: Physics, spawn: THREE.Vector3) {
+  constructor(private readonly ph: Physics, spawn: THREE.Vector3, private readonly terrain: Terrain) {
     const { R, world } = ph;
     this.body = world.createRigidBody(
       R.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y + HALF_HEIGHT + RADIUS, spawn.z),
@@ -90,6 +97,15 @@ export class PlayerController {
   /** Distance to a wall in direction f at height h above the feet, or null. */
   private wallAhead(f: THREE.Vector3, h: number, max = RADIUS + 0.6): number | null {
     return rayDistance(this.ph, { x: this.position.x, y: this.position.y + h, z: this.position.z }, f, max, this.body);
+  }
+
+  /** Hatched rock is grip: a sheer face only holds a climb where the rock
+   *  column ahead reads below the solidity cutoff (smooth pillar cores are
+   *  solidity ≈ 1, drawn as flat black fill with no hatch). */
+  private climbable(f: THREE.Vector3): boolean {
+    const x = this.position.x + f.x * (RADIUS + 0.6);
+    const z = this.position.z + f.z * (RADIUS + 0.6);
+    return this.terrain.solidity(x, z) < CFG.world.climbSolidity;
   }
 
   /** Look for a ledge in direction `f` (unit, horizontal). Returns the point
@@ -193,7 +209,8 @@ export class PlayerController {
       const pushing = wish.lengthSq() > 0.09;
       const f = this.tmp.copy(wish).setY(0).normalize();
       const wallMid = pushing ? this.wallAhead(f, 0.9) : null;
-      if (!pushing || this.stamina <= 0 || jump) {
+      const grippy = pushing && wallMid != null && this.climbable(f);
+      if (!pushing || this.stamina <= 0 || jump || (wallMid != null && !grippy)) {
         this.wallClimb = false;
         this.vy = jump ? JUMP * 0.7 : 0;
         if (jump) this.velocity.set(-f.x * 3, 0, -f.z * 3);
@@ -261,7 +278,7 @@ export class PlayerController {
     if (pushing && blocked && !this.mantle && this.stamina > 8) {
       this.pushT += dt;
       const f = this.tmp.copy(wish).setY(0).normalize();
-      if (this.pushT > CLIMB_DELAY && this.wallAhead(f, 0.9) != null && this.wallAhead(f, 1.6) != null) {
+      if (this.pushT > CLIMB_DELAY && this.wallAhead(f, 0.9) != null && this.wallAhead(f, 1.6) != null && this.climbable(f)) {
         this.wallClimb = true;
         this.pushT = 0;
       }

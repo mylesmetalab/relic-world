@@ -46,8 +46,12 @@ the rock for you too, and what they push, you see move.
   session. Exploring is inking the world in.
 - **It has an upstairs.** Galleries are a second level: the lower cave's
   ceiling is a slab whose top is another floor with its own ceiling. Shafts
-  drop through; gallery edges are cliffs. Push into any sheer face and you
+  drop through; gallery edges are cliffs. Push into a sheer face and you
   climb it, hand over hand, while stamina lasts — let go and you drop.
+- **Hatched rock is grip.** A sheer face only holds a climb where it reads
+  as hatched — smooth black fill (a pillar core) is too solid to grab, and
+  you'll drop back off it. The cutoff is `climbSolidity` in the tuning
+  panel.
 - **You can dig.** Click with empty hands to carve the ground or a wall —
   small, body-wide cuts (the amount per dig is in the panel's dig section).
   Aim up at a wall and each dig carves a step you can mantle onto; you start

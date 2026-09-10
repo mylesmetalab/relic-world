@@ -180,6 +180,28 @@ at the surface (uDepth 0, paper-bright open sky) and deep in the lower cave
 (uDepth 1, denser hatching, dimmer bare-paper reveal) show the read
 diverging. Next up per the backlog: "hatched rock is grip".
 
+### Eleventh pass (2026-09-10, night)
+Hatched rock is grip: a sheer-face wall climb (`PlayerController.wallClimb`
+in `src/player/controller.ts`) now only grips where
+`terrain.solidity(x,z) < CFG.world.climbSolidity` at the point just ahead of
+the player — smooth pillar cores (solidity near 1, drawn as flat black fill
+with no hatch) can't be grabbed, so the look tells you where you can climb.
+The simple threshold rule per the brief (not the analytic-tone sampling
+alternative); `climbSolidity` (default 0.85) is a new tunable next to
+`wallLo`/`wallHi` in `src/world/config.ts`, sliderized in `src/ui/tune.ts`.
+The controller now takes `terrain` in its constructor to read solidity.
+Verified at `?seed=7`: typecheck clean; drove the controller directly
+(`__world.player`, `__world.input.hold("KeyW", true)`, `__world.pump(n)`) at
+a wall face with `terrain.solidity` ≈ 0.66–0.7 — climbed cleanly, HUD state
+"climbing", stamina draining. At a genuinely steep face inside a smooth
+pillar (`terrain.solidity` ≈ 0.85–0.89, found where the gallery-driven
+ceiling height jumps sharply within an already-high-solidity column) the
+climb was denied while blocked and pushing — confirmed the exact threshold
+crossing: probed solidity 0.859 (denied, HUD "ground") then 0.849 one push
+later (granted, HUD "climbing") after the player drifted along the face.
+Screenshots of both the granted and denied states taken. Next up per the
+backlog: props on the surface and in galleries.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
