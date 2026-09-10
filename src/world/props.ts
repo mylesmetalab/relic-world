@@ -2,13 +2,14 @@ import * as THREE from "three";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import { anchorHatch, makeFigureMaterial, disposeFigureMaterial, setFigureColorway, type Pipeline } from "../render/pipeline";
 import type { Physics } from "../physics/world";
-import { CHUNK, Terrain, rockGeometry, vaultDoorway, type Vault, type VaultDoorway } from "./terrain";
+import { CHUNK, Terrain, rockGeometry, vaultDoorway, type Level, type Vault, type VaultDoorway } from "./terrain";
 import { mulberry32 } from "./noise";
 import { loadPacked, PACKED_IDS, type PackedId } from "./models";
 import { FACING } from "../player/figure";
 import { COLORWAYS } from "../render/palette";
 import { buildGolem, type GolemKind } from "../player/golems";
 import { stlEnabled } from "./settings";
+import { CFG } from "./config";
 
 const GOLEM_KINDS: GolemKind[] = ["cairn", "shard", "menhir", "spire", "dolmen", "castle", "totem", "wisp", "hound"];
 
@@ -77,51 +78,71 @@ export class Props {
     return this.all.size;
   }
 
-  /** Spawn a chunk's props (sync for shards; relics arrive when their model loads). */
+  /** Spawn a chunk's props on every level (sync for shards; relics arrive
+   *  when their model loads). Level 2 (the lower cave) gets the full set;
+   *  levels 1 (galleries) and 0 (the surface) get a lighter one — see
+   *  `spawnLevel`. */
   spawn(cx: number, cz: number, chunkSeed: number): ChunkProps {
     const cp: ChunkProps = { key: `${cx},${cz}`, props: [], statics: [], alive: true, torches: [], vaults: [] };
-    const rng = mulberry32(chunkSeed ^ 0x5bd1e995);
-    const shards = 2 + Math.floor(rng() * 4);
+    for (const level of [2, 1, 0] as Level[]) this.spawnLevel(cp, cx, cz, chunkSeed, level);
+    // Two-torch vault(s) whose ~36 m site lands in this chunk (lower cave only).
+    for (const v of this.terrain.vaultsInChunk(cx, cz)) this.addVault(cp, v);
+    return cp;
+  }
+
+  /** One level's shards/shrine/relic set, seated on `terrain.levelAt(level,
+   *  x, z)`. Level 2 is the baseline (lower cave, density ×1, may use an
+   *  STL relic); levels 1 and 0 scale shard count and shrine/relic chance by
+   *  `CFG.world.propUpperDensity` (< 1, a lighter set) and skip STL relics
+   *  in favour of the cheaper procedural golem statue, per the brief's
+   *  "lighter set" on the surface and in galleries. Ids are tagged with the
+   *  level so the three sets never collide within one chunk. */
+  private spawnLevel(cp: ChunkProps, cx: number, cz: number, chunkSeed: number, level: Level): void {
+    const rng = mulberry32(chunkSeed ^ (level === 1 ? 0x1b873593 : level === 0 ? 0x85ebca6b : 0x5bd1e995));
+    const density = level === 2 ? 1 : CFG.world.propUpperDensity;
+    const tag = level === 2 ? "" : `L${level}:`;
+    const openHere = (x: number, z: number): boolean =>
+      level === 2 ? this.terrain.isOpen(x, z) : level === 1 ? this.terrain.isUpperOpen(x, z) : true;
+
+    const shards = Math.round((2 + Math.floor(rng() * 4)) * density);
     for (let i = 0; i < shards; i++) {
-      const id = `${cp.key}:s${i}`;
+      const id = `${cp.key}:${tag}s${i}`;
       const x = cx * CHUNK + rng() * CHUNK;
       const z = cz * CHUNK + rng() * CHUNK;
-      if (Math.hypot(x, z) < 3 || !this.terrain.isOpen(x, z)) continue;
-      const radius = 0.22 + rng() * 0.25;
-      const height = 0.3 + rng() * 0.4;
+      if (Math.hypot(x, z) < 3 || !openHere(x, z)) continue;
+      const radius = (0.22 + rng() * 0.25) * (level === 2 ? 1 : 0.8);
+      const height = (0.3 + rng() * 0.4) * (level === 2 ? 1 : 0.8);
       const geo = rockGeometry(rng, radius, height);
-      const y = this.terrain.floor(x, z) + height / 2 + 0.05;
+      const y = this.terrain.levelAt(level, x, z) + height / 2 + 0.05;
       const prop = this.makeDynamic(id, geo, (geo.attributes.position as THREE.BufferAttribute).array as Float32Array, x, y, z, rng() * Math.PI * 2, this.p.rockMat, ROCK_DENSITY);
       anchorHatch(this.p, prop.mesh as THREE.Mesh, (rng() - 0.5) * 1.4);
       cp.props.push(prop);
     }
-    // A shrine: a standing torch that lights its room, in about one chunk in five.
-    if (rng() < 0.2) {
+    // A shrine: a standing torch that lights its room, in about one chunk in five (scaled).
+    if (rng() < 0.2 * density) {
       const x = cx * CHUNK + 3 + rng() * (CHUNK - 6);
       const z = cz * CHUNK + 3 + rng() * (CHUNK - 6);
-      if (Math.hypot(x, z) > 8 && this.terrain.isOpen(x, z)) {
-        const id = `${cp.key}:shrine`;
-        this.addTorch(id, x, this.terrain.floorAt(x, z), z, false);
+      if (Math.hypot(x, z) > 8 && openHere(x, z)) {
+        const id = `${cp.key}:${tag}shrine`;
+        this.addTorch(id, x, this.terrain.levelAt(level, x, z), z, false);
         cp.torches.push(id);
       }
     }
-    if (rng() < 0.35) {
+    if (rng() < 0.35 * density) {
       const x = cx * CHUNK + 4 + rng() * (CHUNK - 8);
       const z = cz * CHUNK + 4 + rng() * (CHUNK - 8);
-      if (Math.hypot(x, z) > 6 && this.terrain.isOpen(x, z)) {
+      if (Math.hypot(x, z) > 6 && openHere(x, z)) {
         const yaw = rng() * Math.PI * 2;
-        this.plinth(cp, x, z);
-        if (stlEnabled() && rng() < 0.4) {
+        this.plinth(cp, x, z, `${cp.key}:${tag}plinth`, level);
+        const plinthTop = (level === 2 ? this.terrain.floor(x, z) : this.terrain.levelAt(level, x, z)) + 0.5;
+        if (level === 2 && stlEnabled() && rng() < 0.4) {
           void this.relic(cp, PACKED_IDS[Math.floor(rng() * PACKED_IDS.length)]!, x, z, yaw);
         } else {
           const kind = GOLEM_KINDS[Math.floor(rng() * GOLEM_KINDS.length)]!;
-          this.golemRelic(cp, kind, Math.floor(rng() * 1e6), x, z, yaw);
+          this.golemRelic(cp, kind, Math.floor(rng() * 1e6), x, z, yaw, plinthTop, `${cp.key}:${tag}r`);
         }
       }
     }
-    // Two-torch vault(s) whose ~36 m site lands in this chunk.
-    for (const v of this.terrain.vaultsInChunk(cx, cz)) this.addVault(cp, v);
-    return cp;
   }
 
   /** The torch mesh: a leaning stake with a spiked flame, in the figure inks
@@ -202,10 +223,10 @@ export class Props {
     return true;
   }
 
-  private plinth(cp: ChunkProps, x: number, z: number, id = `${cp.key}:plinth`): void {
+  private plinth(cp: ChunkProps, x: number, z: number, id = `${cp.key}:plinth`, level: Level = 2): void {
     const { R, world } = this.ph;
     const h = 0.5;
-    const y = this.terrain.floor(x, z);
+    const y = level === 2 ? this.terrain.floor(x, z) : this.terrain.levelAt(level, x, z);
     const geo = new THREE.CylinderGeometry(0.55, 0.7, h, 7, 1);
     geo.translate(0, h / 2, 0);
     const mesh = new THREE.Mesh(geo, this.p.rockMat);

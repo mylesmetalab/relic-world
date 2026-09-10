@@ -202,6 +202,28 @@ later (granted, HUD "climbing") after the player drifted along the face.
 Screenshots of both the granted and denied states taken. Next up per the
 backlog: props on the surface and in galleries.
 
+### Twelfth pass (2026-09-10, later still)
+Props on the surface and in galleries: `Props.spawn` (`src/world/props.ts`)
+now loops all three levels via a new `spawnLevel(cp, cx, cz, chunkSeed,
+level)` — level 2 (the lower cave) keeps its full shard/shrine/relic set;
+levels 1 (galleries, gated by `terrain.isUpperOpen`) and 0 (the surface, no
+extra gate, matching `scatterRocks`) get a lighter set scaled by the new
+`propUpperDensity` tunable (default 0.4, sliderized in `src/ui/tune.ts`) —
+fewer/smaller shards, and rarer shrines and relics, always the cheaper
+procedural golem statue rather than an STL model on the upper levels. Every
+prop is seated with `terrain.levelAt(level, x, z)` (plinths and torches too,
+via a new optional `level` arg on `Props.plinth`), and ids carry an `L0:`/
+`L1:` tag so the three per-chunk sets never collide (level 2 keeps its
+original untagged ids — vaults, which are lower-cave only, are unaffected).
+Verified at `?seed=7`: typecheck clean; read `chunks.props` back after
+`pump(30)` and found 37 level-0 props, 6 level-1 props and 61 level-2 props
+across the loaded chunks (including a plinth + golem relic pair on each of
+the surface and gallery levels); teleported the player to a surface relic
+(HUD "surface") and a gallery relic (HUD "upper gallery") and screenshotted
+both — the gold golem statue on its plinth, out under the paper sky on the
+surface and tucked in a gallery alcove under the ringed ceiling. Next up per
+the backlog: dig upwards (ceilings).
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

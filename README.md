@@ -65,7 +65,9 @@ the rock for you too, and what they push, you see move.
 - **Things can be pushed, together.** Rock shards and gold-leaf relic
   statues on plinths are dynamic bodies at rock density; walk into them and
   they slide and topple. The nearest player simulates a prop and everyone
-  else follows, so a shove is shared.
+  else follows, so a shove is shared. They spawn on every level — a lighter
+  scatter on the surface and on gallery slabs, the full set in the lower
+  cave (tune the upper/lower balance as `propUpperDensity`).
 - **You can pick each other up.** Aim at another player within reach and
   they get the same white outline a prop does — "F to pick up" is something
   you see, not just read. The one grabbed gets a chat-bubble-sized toast
