@@ -467,6 +467,59 @@ exist and screenshot each one's distinct look; specifically demonstrate the
 chosen mechanical difference (e.g. climbing failing at the same solidity
 value in one biome but succeeding in another).
 
+## 16. Torches run out
+
+**Goal:** placed torches (`X`) are permanent today — `TorchProp` has no
+lifetime, so the two-torch vault door (brief 3) is a one-time unlock, not a
+resource decision. Give placed torches a burn time so keeping two lit at
+once, and finding your way back through a dark cave, are real choices —
+world/shrine torches (`placed: false`, spawned by chunk generation) are
+unaffected, only player-placed ones.
+
+- `TorchProp` (`src/world/props.ts`) gets a `life`/`maxLife` (seconds) —
+  only meaningful when `placed`. New tunable `world.torchLifeSec` in
+  `src/world/config.ts` (a few minutes feels right — tune by feel once it's
+  running) with a slider in `src/ui/tune.ts`.
+- Countdown lives in `src/main.ts`'s per-frame loop (near `checkVaultDoors()`
+  — `Props` doesn't have `net.selfId` in scope and shouldn't need to), and
+  only ticks torches YOU placed: `chunks.props.placedTorches().filter(t =>
+  t.id.startsWith(net.selfId))`. On expiry, `chunks.props.removeTorch(id)`
+  and call `sendMyTorches()` immediately (don't wait for the existing 4 s
+  periodic broadcast) so onlookers see it go out promptly.
+- Cheap dying-torch visual, no new shader/uniform needed: shrink the
+  `TorchProp.reach` value as `life` runs low (say, the last quarter of
+  `maxLife`) — `reach` already feeds directly into the light radius pushed
+  into `p.torches` each frame, so a shrinking reach reads as a dimming torch
+  for free.
+- **A real latent bug this brief will make visible constantly, so fix it as
+  part of this brief, not as scope creep:** `net.onTorches` (`src/main.ts`)
+  is additive-only — it calls `addTorch` for everything in an incoming list,
+  but never removes a peer's torch that's missing from a later list. Today
+  that only shows up rarely (recycling past `MAX_PLACED_TORCHES`); with
+  torches expiring on a timer it would happen constantly and every burned-out
+  torch would sit there forever on OTHER players' screens. Fix `onTorches`
+  to reconcile: track which torch ids belong to each peer and remove any
+  that are no longer in that peer's latest list (the existing 4 s periodicity
+  of `sendMyTorches()` is enough — no new net message needed).
+- The vault door itself needs no change: `checkVaultDoors()` already
+  re-evaluates `placedTorches()` every frame, so a torch burning out before
+  both pillars are lit simply means the door doesn't open (the intended
+  tension) — once it DOES open it's carved into the terrain permanently, so
+  torches expiring afterward correctly doesn't reseal it.
+
+Files: `src/world/props.ts` (`TorchProp.life`/`maxLife`, reach-dimming),
+`src/main.ts` (countdown + expiry near `checkVaultDoors()`, the `onTorches`
+reconciliation fix), `src/world/config.ts` + `src/ui/tune.ts`
+(`torchLifeSec`).
+
+Verify: place a torch, fast-forward its life via `__world` (set `life` near
+0 directly, or lower `torchLifeSec` via `?cfg=`/the tune panel for a quick
+test) and confirm it dims then disappears, screenshot the dim/near-death
+state; two-tab test — place a torch in tab A, expire it, confirm tab B's
+view of that torch also disappears within one broadcast interval (~4 s);
+confirm a *world* shrine torch (a vault's door pillar, `placed: false`)
+never dims or disappears no matter how long you wait.
+
 ---
 
 ## How to work here
