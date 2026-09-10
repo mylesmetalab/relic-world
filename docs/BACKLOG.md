@@ -273,6 +273,148 @@ on this Mac):**
 
 ---
 
+## 13. Instance the rocks
+
+**Goal:** cut draw calls — and the ND pass's doubled cost on top of them —
+from one mesh per rock to a handful of `InstancedMesh` batches per
+chunk-level, without losing per-rock hatch anchoring or per-rock convex-hull
+physics colliders. This is the thing most likely to silently hurt phones and
+the iOS TestFlight build (which now defaults to `high` quality, same as
+desktop) if left alone.
+
+- Today: `scatterRocks(terrain, cx, cz, chunkSeed, level)`
+  (`src/world/terrain.ts`) builds a UNIQUE procedural geometry per rock;
+  `src/world/chunks.ts`'s rock loop makes one `THREE.Mesh` per rock, each
+  with its own `anchorHatch(this.p, mesh, r.hatchSeed)` call. `anchorHatch`
+  (`src/render/pipeline.ts`) sets an `onBeforeRender` that projects the
+  mesh's world origin to print pixels and writes it into a uniform SHARED by
+  every mesh using `rockMat` — this only works because meshes draw one at a
+  time, each mutating the uniform right before its own draw call. That
+  approach cannot survive real instancing (all instances in one draw call
+  share one set of uniforms).
+- Approach: bake a small fixed pool of prototype rock geometries once (8–12
+  shapes spanning the small/tall/stalagmite silhouettes `rockGeometry`
+  already produces, generated up front instead of per-rock). `scatterRocks`
+  picks a prototype index per rock (deterministic from `chunkSeed`/rock
+  index) instead of building a unique geometry, still returning per-rock
+  position/rotationY/hatchSeed/hull. `chunks.ts` groups rocks by prototype
+  id and builds ONE `THREE.InstancedMesh` per prototype per chunk-level
+  (instead of one `THREE.Mesh` per rock), setting each instance's matrix
+  from position + rotationY.
+- Hatch anchoring has to move from the CPU (`onBeforeRender` per mesh) into
+  the shader for instanced rocks: add an instanced attribute (e.g.
+  `instanceHatchSeed`, an `InstancedBufferAttribute`) and compute each
+  instance's world origin → print-pixel projection in GLSL from
+  `instanceMatrix`, using the view/projection matrices already available to
+  the material — real work in `src/render/shaders.ts` (the hatch-anchoring
+  block) and `src/render/pipeline.ts` (an "instanced hatch mode" variant;
+  leave the existing per-mesh `onBeforeRender` path alone for chunk
+  floor/ceiling meshes, which are already one draw call each and don't need
+  this).
+- Colliders are unchanged: keep one convex-hull collider per rock instance
+  exactly as today (`addConvexHull`) — Rapier doesn't care how rendering
+  batches things.
+- Non-goals, to keep this PR-sized: don't instance chunk floor/ceiling
+  meshes (already one draw call per level) or figures; scope strictly to
+  `scatterRocks`'s rock population.
+
+Files: `src/world/terrain.ts` (`rockGeometry`/`scatterRocks` — prototype
+pool + per-rock prototype index), `src/world/chunks.ts` (group by prototype
+into `InstancedMesh` per level per chunk), `src/render/pipeline.ts`
+(instanced-hatch attribute wiring), `src/render/shaders.ts` (per-instance
+hatch-phase projection).
+
+Verify: compare `renderer.info.render.calls` before/after at the same
+chunk radius/seed — should drop meaningfully; screenshot a rock-dense area
+and confirm hatching still reads correctly anchored per-rock (no shared or
+smeared pattern across instances, which is the failure mode this refactor
+risks); walk into rocks and confirm colliders still block correctly.
+This is the hardest of the new briefs (real per-instance shader math) — if
+the projection math doesn't work out after two real attempts, stop and
+report rather than ship visibly broken hatching.
+
+## 14. Dig swing
+
+**Goal:** when you (or a peer) swing a pick to dig, the figure's arm
+actually swings through the motion — arms exist now (brief 1), but digging
+doesn't use them, so the game's single most common action is invisible on
+the body.
+
+- `Figure.update()` (`src/player/figure.ts`) already has two pose states
+  ahead of ordinary walk-swing: a top-of-function `flail` branch, and a
+  `reaching` check further down that overrides arm rotation with a fixed
+  forward-reach pose. Add a third, time-bounded one: `swing(ms = 300)`
+  (mirror `PlayerController`'s `stumbleT` countdown pattern from brief 9) —
+  a `swingT` field that counts down each `update(pos, wish, speed, dt)`
+  call. While `swingT > 0`, override one "lead" arm's rotation (e.g.
+  `arms[0]`) through a short eased windup-then-strike arc, timed to peak
+  roughly when the dig cell is actually carved. `swing()` takes priority
+  over `reaching` (a dig mid-carry should still show the swing) but loses to
+  `flail` (being carried while trying to dig is an edge case — flail wins).
+  No-op if `this.arms.length === 0` (the golem Hound has none, per
+  `GOLEM_MOTION`) — don't throw.
+- Wire it in `src/main.ts` at exactly two call sites, not inside `applyDig`
+  itself (that's the wrong layer — it's also called by the vault-door
+  auto-open, which should NOT trigger a swing):
+  - Local: inside `digAtAim()`, alongside the existing `sound.dig(...)` /
+    `digMark.burst(...)` calls.
+  - Remote: `net.onDig` already hands you `(d: DigMsg, peerId)` — call
+    `remotes.get(peerId)?.figure.swing()` there. No new net protocol field
+    needed; the existing `DigMsg` + `peerId` is enough.
+
+Files: `src/player/figure.ts` (`swing()` + `swingT` + arm-pose priority in
+`update()`), `src/main.ts` (`digAtAim()` and the `net.onDig` handler).
+
+Verify: `?seed=7`, dig at aim, confirm `figure["swingT"] > 0` right after
+and the arm visibly swings across a pumped-frame sequence; two-tab test —
+dig in tab A, confirm tab B's remote figure for A also swings; confirm a
+Hound-character digger doesn't error (no arms).
+
+## 15. More biome variety (and give biomes some teeth)
+
+**Goal:** today's 7 biomes (`src/world/biomes.ts`) differ only by palette +
+ink-pen parameters + a few terrain numbers (`terrace`/`relief`/`rocks`/
+`tallShare`/`ceilLift`) — nothing is mechanically distinct beyond
+Cathedral's taller ceiling. Add a couple more biomes, and give at least one
+(existing or new) an actual gameplay difference, so "deeper is stranger"
+gets a sibling: "here is stranger."
+
+- Add 2–3 new `Biome` entries following the exact shape every existing one
+  uses. Reuse an existing ramp (like Cathedral reuses "Void Peaks") or add
+  new `ENVWAYS` colorway entries in `src/render/palette.ts` for genuinely
+  new palettes. Ideas in the game's own idiom (no literal water/weather —
+  everything is still rock, ink and light): a "Crystal Vein" (low `black`,
+  high `nib`, sparse rocks, high `tallShare` — bright, glassy, sparse) or a
+  "Root Cellar" (high `cracks`/`stipple`, low `relief`, lots of small rocks
+  — cramped and tangled).
+- Pick ONE mechanical hook (not more — keep this PR-sized) so a biome
+  actually feels different to move through, not just look different. Two
+  concrete options, use judgement on which fits the current code best:
+  (a) Per-biome climb grip: brief 6's `climbSolidity` gate in
+  `src/player/controller.ts` currently reads one global `CFG.world.
+  climbSolidity` — read `terrain.biome(x,z).climbSolidity` instead, falling
+  back to the global for biomes that don't override it, so e.g. Glacier
+  reads as slippery (lower threshold) and Sulphur Pit as soft/crumbly
+  (higher).
+  (b) Per-biome prop density: extend brief 7's `propUpperDensity` pattern in
+  `src/world/props.ts` with a `Biome.propDensity` multiplier.
+- Keep the design rules: no sky, no drone sound, nothing here touches the
+  dig-cell system's small/cell-snapped rule.
+
+Files: `src/world/biomes.ts` (new entries + any new mechanical field),
+`src/render/palette.ts` (new `ENVWAYS` ramps if needed), and whichever of
+`src/player/controller.ts` / `src/world/props.ts` the chosen mechanical
+hook lives in.
+
+Verify: `?seed=7`, sample `terrain.biomeId(x,z)`/`terrain.biome(x,z).name`
+across a range of chunks (and try a different `?seed=` if the new biomes
+don't turn up nearby — they're seeded per-world) to confirm the new biomes
+exist and screenshot each one's distinct look; specifically demonstrate the
+chosen mechanical difference (e.g. climbing failing at the same solidity
+value in one biome but succeeding in another).
+
+---
+
 ## How to work here
 
 - Repo `~/Sites/relic-world`, public `mylesmetalab/relic-world`. Push to
