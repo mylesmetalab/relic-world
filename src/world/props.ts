@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import { anchorHatch, makeFigureMaterial, disposeFigureMaterial, setFigureColorway, type Pipeline } from "../render/pipeline";
 import type { Physics } from "../physics/world";
-import { CHUNK, Terrain, rockGeometry, vaultDoorway, type Level, type Vault, type VaultDoorway } from "./terrain";
+import { CHUNK, Terrain, rockGeometry, boulderGeometry, vaultDoorway, type Level, type Vault, type VaultDoorway, type BoulderSite } from "./terrain";
 import { mulberry32 } from "./noise";
 import { loadPacked, PACKED_IDS, type PackedId } from "./models";
 import { FACING } from "../player/figure";
@@ -28,6 +28,14 @@ const GOLEM_KINDS: GolemKind[] = ["cairn", "shard", "menhir", "spire", "dolmen",
  *  but not to hurl. */
 const ROCK_DENSITY = 800;
 const GOLD_DENSITY = 6000;
+/** A boulder that takes two: dense enough (with the size below) that one
+ *  player's push (character mass 85 kg, `setApplyImpulsesToDynamicBodies`
+ *  in `PlayerController`) barely budges it, but two pushing/handing off
+ *  ownership between them (see `main.ts`'s distance-based `isOwner`) move it
+ *  for real. Tuned in-browser by measuring actual displacement (see
+ *  `docs/PLAN.md`) rather than guessed — a fixed constant like `ROCK_DENSITY`
+ *  itself, not a live slider, since it's a physical constant tuned once. */
+const BOULDER_DENSITY = 400;
 
 export type Prop = {
   id: string;
@@ -89,6 +97,8 @@ export class Props {
     for (const level of [2, 1, 0] as Level[]) this.spawnLevel(cp, cx, cz, chunkSeed, level);
     // Two-torch vault(s) whose ~36 m site lands in this chunk (lower cave only).
     for (const v of this.terrain.vaultsInChunk(cx, cz)) this.addVault(cp, v);
+    // Boulder site(s) whose ~40 m site lands in this chunk (lower cave only).
+    for (const b of this.terrain.boulderSitesInChunk(cx, cz)) this.addBoulder(cp, b);
     return cp;
   }
 
@@ -274,6 +284,31 @@ export class Props {
     this.plinth(cp, v.cx, v.cz, `${v.id}:plinth`);
     const kind = GOLEM_KINDS[Math.floor(v.relicKindRng * GOLEM_KINDS.length)]!;
     this.golemRelic(cp, kind, v.relicSeed, v.cx, v.cz, v.doorAngle + Math.PI, undefined, `${v.id}:r`);
+  }
+
+  /** A big, heavy, round boulder — see `boulderGeometry` in terrain.ts for
+   *  why it's a dome, not `rockGeometry`'s cone. `PlayerController`'s wall
+   *  climb / mantle rays (see `notDynamic` there) already skip every dynamic
+   *  prop, so this doesn't need to dodge a specific height band the way an
+   *  earlier attempt did — it just needs to physically block a walking
+   *  player, which the dome shape does on its own once big enough (see the
+   *  comment on `boulderGeometry`). See `BOULDER_DENSITY` for the mass
+   *  tuning. */
+  private addBoulder(cp: ChunkProps, site: BoulderSite): void {
+    let h = 0;
+    for (let i = 0; i < site.id.length; i++) h = (h * 31 + site.id.charCodeAt(i)) | 0;
+    const rng = mulberry32(h);
+    const radius = 1.5 + rng() * 0.4;
+    const height = radius * (0.85 + rng() * 0.25);
+    const geo = boulderGeometry(rng, radius, height);
+    const y = this.terrain.floor(site.x, site.z) + 0.05;
+    const id = `boulder:${site.id}`;
+    const prop = this.makeDynamic(
+      id, geo, (geo.attributes.position as THREE.BufferAttribute).array as Float32Array,
+      site.x, y, site.z, site.yaw, this.p.rockMat, BOULDER_DENSITY,
+    );
+    anchorHatch(this.p, prop.mesh as THREE.Mesh, (rng() - 0.5) * 1.4);
+    cp.props.push(prop);
   }
 
   /** A miniature of one of the cave's own characters, in gold, on the plinth. */

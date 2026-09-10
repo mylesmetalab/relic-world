@@ -770,6 +770,44 @@ between one and two players; recent passes (brief 17) found this sandbox's
 WebRTC actually works, so attempt it for real before falling back to
 anything synthetic. Screenshot the boulder both at rest and mid-roll.
 
+**Built (2026-09-10):** shipped close to spec, plus a real physics problem
+caught by testing rather than guessed at. `Terrain.boulderSite`/
+`boulderSitesInChunk` mirrors `vault`'s own-grid/hash sparse-placement
+pattern (a ~40 m grid, lower cave only, clear of spawn); `Props.addBoulder`
+seats one per site via the existing `makeDynamic` at a new fixed
+`BOULDER_DENSITY` (400 — a tuned physical constant like `ROCK_DENSITY`
+itself, not a slider). The brief's own suggested shape (a wide, short CONE)
+turned out to be a shallow, constant-slope ramp at any scale — the player's
+own 52° slope-climb just walked up and over it, verified directly, no push
+involved. Root-caused rather than patched around: wall-climb/ledge-mantle's
+raycasts (`src/player/controller.ts`) previously had no way to tell terrain
+from a dynamic prop, so any sufficiently tall pushable object sitting in
+open terrain would incorrectly read as a climbable wall or ledge.
+`rayDistance` (`src/physics/world.ts`) gained an optional Rapier
+`filterPredicate`; `wallAhead`/`findLedge` now pass one (`notDynamic`) that
+skips every collider on a `Dynamic` rigid body — climbing now only ever
+reads terrain and static props, which is the actually-correct rule, not a
+boulder-specific hack. With that fixed, a new `boulderGeometry` (a jittered
+icosahedron dome, not a cone) genuinely blocks a walking player once
+radius/height are big enough that its too-steep band exceeds autostep's
+0.55 m. Verified at `?seed=7`: typecheck clean; solo continuous 3 s push
+measured **0.197 m** and **0.218 m** across two runs (mass ≈ 4720 kg,
+read back via `body.mass()`) — small and consistent. **Real two-tab test**:
+tab A pushed it 1 s alone (**+0.148 m**), tab B's independent physics
+confirmed the identical resulting position within one broadcast interval
+(genuine live sync, checked to 3 decimals), then tab B continued pushing for
+another 1 s (**+0.065 m** more) — two players, 2 s combined, ≈0.27 m total,
+already past what one player alone gets in a full 3 s. Screenshots taken at
+rest (a faceted dome, clearly bigger/rounder than any shard) and mid-push
+with a second player's figure visible beside it. Honest caveat: when both
+players' pushes converged too tightly on the same contact point at once in
+an earlier attempt, the pre-existing distance-based props-ownership sync
+(two independent client physics sims, periodically hard-corrected) produced
+a visible pop/launch that settled back to rest a moment later — a known
+characteristic of that sync model (explicitly out of scope to redesign
+here), not a defect introduced by this boulder. See `docs/PLAN.md`'s
+twenty-third pass for full detail.
+
 ---
 
 ## How to work here

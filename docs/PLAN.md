@@ -646,6 +646,76 @@ non-owner tab's `presence.fleeing` within one broadcast interval — a genuine
 live confirmation of both the ownership tie-break and the net message path,
 not the direct-invocation fallback several earlier passes had to use.
 
+### Twenty-third pass (2026-09-10, latest)
+Brief 18, a boulder that takes two: re-verified `makeDynamic`, `ROCK_DENSITY`/
+`GOLD_DENSITY`, `setApplyImpulsesToDynamicBodies(true)` and the vault's
+`vault`/`vaultsInChunk` sparse-placement pattern against the real current
+code before touching anything. `Terrain.boulderSite`/`boulderSitesInChunk`
+(`src/world/terrain.ts`) is a ~40 m grid of candidate sites — its own
+hash/grid, mirroring `vault`'s memoised-per-cell pattern exactly — gated to
+the lower cave (`isOpen`, clear of spawn, outside galleries). `Props.
+addBoulder` (`src/world/props.ts`) seats one per site via `makeDynamic` at a
+new `BOULDER_DENSITY` (400, a fixed tuned constant like `ROCK_DENSITY`
+itself, not a slider — this is a physical constant tuned once by measuring,
+not something worth live-retuning in the panel).
+
+Real in-browser tuning turned up a genuine, non-obvious problem, not just a
+number to dial in: a wide, short CONE (`rockGeometry`'s shape, the brief's
+own "low height-to-radius ratio so it reads as a boulder" suggestion) is a
+shallow, CONSTANT-slope ramp at any scale — the player's own slope-climb
+(52°) just walks up and over it, no push required, measured directly (a
+cone-shaped boulder let the player climb up and over at any density). A
+second, independent problem: the existing ledge-mantle system (search rays
+at 0.7-2.45 m) and the wall-climb probe (rays at 0.9/1.6 m) both read the
+boulder as a climbable wall or a mantle-able ledge whenever it was tall
+enough to intersect those rays, since `climbable()` only checks TERRAIN
+solidity at the point ahead — irrelevant to what's actually blocking, so any
+sufficiently tall dynamic prop sitting in open (low-solidity) terrain would
+incorrectly qualify. Fixed at the source rather than fighting boulder
+dimensions to dodge specific ray heights: `rayDistance` (`src/physics/
+world.ts`) now takes an optional Rapier `filterPredicate`, and
+`PlayerController`'s `wallAhead`/`findLedge` (`src/player/controller.ts`,
+`notDynamic`) pass one that excludes every collider on a `Dynamic` rigid
+body — wall-climb and ledge-mantle now only ever read terrain and static
+props (pillars, plinths), never a pushable prop, which is the actually
+correct rule (a loose object was never meant to be climbable) rather than a
+boulder-specific patch. With that fixed, a new `boulderGeometry` (`terrain.
+ts`) builds a jittered icosahedron-dome instead of a cone — a round shape's
+slope runs shallow-to-vertical-to-shallow (flat poles, vertical equator), so
+at a big enough radius/height its too-steep-to-climb band is itself taller
+than autostep (0.55 m) can bridge, genuinely blocking a walking player
+rather than just looking round.
+
+Verified at `?seed=7`: typecheck clean. Found real placed boulders via
+`terrain.boulderSitesInChunk` across a chunk sweep. Solo push (a fixed
+world-space heading held into it for 3 s, `__world.pump`, no re-aiming) at
+`BOULDER_DENSITY` 400 (mass ≈ 4720 kg for this boulder's actual size, read
+back via `body.mass()`) moved it **0.197 m** in one run and **0.218 m** in a
+second run with a slightly different steering methodology — small,
+consistent, clearly "barely budges." **Live two-tab test** (this session's
+sandbox reached the Nostr relay; confirmed real peers in `net.peers` on both
+sides): reset the same boulder to an identical start position in both tabs,
+had tab A push it alone for 1 s (**+0.148 m**), confirmed tab B's own
+independent physics read the exact same resulting position within one
+broadcast interval (cross-checked to 3 decimal places — genuine live sync,
+not assumed), then had tab B continue pushing from there for another 1 s
+(**+0.065 m** more) — **two real players, 2 s of combined pushing, totalling
+≈0.27 m, already ahead of what one player alone manages in a full 3 s** (0.20-
+0.22 m). Screenshots taken: the boulder at rest from directly above (a
+faceted dome, clearly bigger and rounder than any shard or the jagged
+crystal-cluster rocks beside it) and mid-interaction with a real second
+player's figure visible beside it during a live push. One honest caveat, not
+papered over: when both players' pushes converged too tightly on the same
+contact point at once in an earlier attempt, the existing distance-based
+props-ownership reconciliation (two independent client-side physics
+simulations, periodically hard-synced) produced a visible pop/launch
+artifact that settled back to rest a moment later — a known characteristic
+of the pre-existing sync model this brief explicitly says not to redesign,
+not something introduced by or unique to this boulder; real human players
+adjusting their approach (as this session's scripted "reposition after
+sliding off" test did) shouldn't hit it often, but it is a real edge case
+worth knowing about.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

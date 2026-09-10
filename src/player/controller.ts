@@ -105,9 +105,20 @@ export class PlayerController {
     return this.mantle !== null || this.wallClimb;
   }
 
+  /** Wall climb / mantle rays only ever consider terrain (and other static
+   *  geometry, like a vault's door pillars) — never a dynamic prop. A big
+   *  pushable boulder (brief 18) is tall enough to graze these rays, and
+   *  without this it would read as a sheer face to climb or a ledge to
+   *  mantle instead of something you shove; a loose object was never meant
+   *  to be climbable in the first place. */
+  private readonly notDynamic = (c: RAPIER.Collider): boolean => {
+    const body = c.parent();
+    return !body || body.bodyType() !== this.ph.R.RigidBodyType.Dynamic;
+  };
+
   /** Distance to a wall in direction f at height h above the feet, or null. */
   private wallAhead(f: THREE.Vector3, h: number, max = RADIUS + 0.6): number | null {
-    return rayDistance(this.ph, { x: this.position.x, y: this.position.y + h, z: this.position.z }, f, max, this.body);
+    return rayDistance(this.ph, { x: this.position.x, y: this.position.y + h, z: this.position.z }, f, max, this.body, this.notDynamic);
   }
 
   /** Hatched rock is grip: a sheer face only holds a climb where the rock
@@ -129,7 +140,7 @@ export class PlayerController {
     //    so a 1 m step and a 2 m wall both register.
     let dWall: number | null = null;
     for (const h of [0.5, 1.0, 1.5]) {
-      const d = rayDistance(this.ph, { x: feet.x, y: feet.y + h, z: feet.z }, f, RADIUS + 0.9, exclude);
+      const d = rayDistance(this.ph, { x: feet.x, y: feet.y + h, z: feet.z }, f, RADIUS + 0.9, exclude, this.notDynamic);
       if (d != null && (dWall == null || d < dWall)) dWall = d;
     }
     if (dWall == null) return null;
@@ -143,15 +154,15 @@ export class PlayerController {
     for (const past of [0.55, 0.95, 1.35, 1.75]) {
       const over = dWall + past;
       const px = feet.x + f.x * over, pz = feet.z + f.z * over;
-      const dTop = rayDistance(this.ph, { x: px, y: topY, z: pz }, down, span, exclude);
+      const dTop = rayDistance(this.ph, { x: px, y: topY, z: pz }, down, span, exclude, this.notDynamic);
       if (dTop == null) continue;
       const ledgeY = topY - dTop;
       const rise = ledgeY - feet.y;
       if (rise < LEDGE_MIN || rise > LEDGE_MAX) continue;
-      const dAhead = rayDistance(this.ph, { x: px + f.x * 0.4, y: topY, z: pz + f.z * 0.4 }, down, span + 1, exclude);
+      const dAhead = rayDistance(this.ph, { x: px + f.x * 0.4, y: topY, z: pz + f.z * 0.4 }, down, span + 1, exclude, this.notDynamic);
       if (dAhead == null || Math.abs((topY - dAhead) - ledgeY) > 0.15) continue;
       // 3. Headroom for the capsule on the tread.
-      const head = rayDistance(this.ph, { x: px, y: ledgeY + 0.15, z: pz }, { x: 0, y: 1, z: 0 }, this.height, exclude);
+      const head = rayDistance(this.ph, { x: px, y: ledgeY + 0.15, z: pz }, { x: 0, y: 1, z: 0 }, this.height, exclude, this.notDynamic);
       if (head != null) continue;
       return new THREE.Vector3(px + f.x * 0.15, ledgeY + 0.04, pz + f.z * 0.15);
     }

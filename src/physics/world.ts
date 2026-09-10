@@ -79,13 +79,16 @@ export function rayHit(
 }
 
 /** Distance along `dir` (unit) from `origin` to the first collider, or null.
- *  `exclude` skips the player's own body. */
+ *  `exclude` skips the player's own body. `predicate`, if given, is asked
+ *  per-collider whether to consider it a hit at all — used to keep the wall
+ *  climb/mantle system (see `player/controller.ts`) reading only terrain,
+ *  never a loose dynamic prop it happens to be tall enough to graze. */
 export function rayDistance(
   ph: Physics, origin: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number },
-  maxDist: number, exclude?: RAPIER.RigidBody,
+  maxDist: number, exclude?: RAPIER.RigidBody, predicate?: (collider: RAPIER.Collider) => boolean,
 ): number | null {
   const ray = new ph.R.Ray(origin, dir);
-  const hit = ph.world.castRay(ray, maxDist, true, undefined, undefined, undefined, exclude);
+  const hit = ph.world.castRay(ray, maxDist, true, undefined, undefined, undefined, exclude, predicate);
   if (!hit) return null;
   const h = hit as unknown as { timeOfImpact?: number; toi?: number };
   return h.timeOfImpact ?? h.toi ?? null;

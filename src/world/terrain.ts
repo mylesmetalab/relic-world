@@ -33,6 +33,14 @@ export type Level = 0 | 1 | 2;
 const VAULT_GRID = 36;
 const VAULT_CHANCE = 0.3;
 
+/** ~40 m grid of candidate boulder sites (see `Terrain.boulderSite`) — a
+ *  sparse, findable placement mirroring the vault pattern above: its own
+ *  grid spacing and hash so it never competes with vault placement. */
+const BOULDER_GRID = 40;
+const BOULDER_CHANCE = 0.35;
+
+export type BoulderSite = { id: string; x: number; z: number; yaw: number };
+
 export type Vault = {
   id: string; cx: number; cz: number; doorAngle: number;
   /** 0..1 draw for which golem kind sits inside, and its shape seed. */
@@ -78,6 +86,8 @@ export class Terrain {
   readonly digsUp: [Map<string, number>, Map<string, number>, Map<string, number>] = [new Map(), new Map(), new Map()];
   /** Vault sites, memoised per 36 m grid cell (there is at most one per cell). */
   private readonly vaultCache = new Map<string, Vault | null>();
+  /** Boulder sites, memoised per 40 m grid cell — same pattern as `vaultCache`. */
+  private readonly boulderCache = new Map<string, BoulderSite | null>();
 
   constructor(readonly seed: number) {
     this.floorLo = new Simplex2(seed * 7 + 1);
@@ -193,6 +203,46 @@ export class Terrain {
     const inner = smoothstep(R - 0.3, R, d);
     const outer = 1 - smoothstep(R + ring, R + ring + 0.3, d);
     return inner * outer;
+  }
+
+  /** The boulder site (if any) whose ~40 m cell contains (x,z): lower-cave
+   *  only, well clear of spawn, and in an open room (not inside a wall or
+   *  under a gallery) — same per-grid-cell memoised pattern as `vault`. */
+  boulderSite(x: number, z: number): BoulderSite | null {
+    const gx = Math.floor(x / BOULDER_GRID), gz = Math.floor(z / BOULDER_GRID);
+    const key = `${gx},${gz}`;
+    const cached = this.boulderCache.get(key);
+    if (cached !== undefined) return cached;
+    const rng = mulberry32(hash3(this.seed ^ 0xb0670de5, gx, gz));
+    let b: BoulderSite | null = null;
+    if (rng() <= BOULDER_CHANCE) {
+      const jitter = BOULDER_GRID * 0.3;
+      const bx = gx * BOULDER_GRID + BOULDER_GRID / 2 + (rng() - 0.5) * jitter;
+      const bz = gz * BOULDER_GRID + BOULDER_GRID / 2 + (rng() - 0.5) * jitter;
+      const yaw = rng() * Math.PI * 2;
+      if (Math.hypot(bx, bz) >= SPAWN_CLEAR * 3 && this.isOpen(bx, bz) && this.gallery(bx, bz) < 0.4) {
+        b = { id: `b${gx}_${gz}`, x: bx, z: bz, yaw };
+      }
+    }
+    this.boulderCache.set(key, b);
+    return b;
+  }
+
+  /** Every boulder site whose centre could land inside this 24 m chunk (a
+   *  chunk can straddle up to four 40 m sites, so its corners cover them
+   *  all) — mirrors `vaultsInChunk`. */
+  boulderSitesInChunk(cx: number, cz: number): BoulderSite[] {
+    const ox = cx * CHUNK, oz = cz * CHUNK;
+    const gxs = new Set([Math.floor(ox / BOULDER_GRID), Math.floor((ox + CHUNK - 1) / BOULDER_GRID)]);
+    const gzs = new Set([Math.floor(oz / BOULDER_GRID), Math.floor((oz + CHUNK - 1) / BOULDER_GRID)]);
+    const out: BoulderSite[] = [];
+    for (const gx of gxs) {
+      for (const gz of gzs) {
+        const b = this.boulderSite(gx * BOULDER_GRID + 1, gz * BOULDER_GRID + 1);
+        if (b && b.x >= ox && b.x < ox + CHUNK && b.z >= oz && b.z < oz + CHUNK) out.push(b);
+      }
+    }
+    return out;
   }
 
   /** 0..1 — where the upper level exists (above 0.5). Never over the spawn column. */
@@ -522,6 +572,30 @@ export function rockGeometry(rng: () => number, radius: number, height: number):
     pos.setZ(i, z * jitter + leanZ * t);
   }
   pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** A big, round boulder (brief 18) — an icosahedron-based dome rather than
+ *  `rockGeometry`'s cone. A wide/short CONE is a shallow, uniform-slope ramp
+ *  at any scale, and the player's own slope-climb (52°) plus autostep (0.55 m)
+ *  would just walk it, no push required. A rounded dome's slope grows from
+ *  flat (bottom pole) to vertical (equator) and back to flat (top), so with
+ *  `radius` and `height` both large enough its too-steep-to-climb band is
+ *  itself taller than autostep can bridge — genuinely un-walkable, not just
+ *  visually round — while still reading squat and boulder-like rather than a
+ *  stalagmite spike (see `props.ts` `addBoulder` for the tuned numbers). */
+export function boulderGeometry(rng: () => number, radius: number, height: number): THREE.BufferGeometry {
+  const geo = new THREE.IcosahedronGeometry(1, 1);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const jitter = 1 + (rng() - 0.5) * 0.22;
+    pos.setXYZ(i, pos.getX(i) * jitter, pos.getY(i) * jitter, pos.getZ(i) * jitter);
+  }
+  pos.needsUpdate = true;
+  geo.scale(radius, height / 2, radius);
+  geo.computeBoundingBox();
+  geo.translate(0, -geo.boundingBox!.min.y, 0); // sit on y = 0
   geo.computeVertexNormals();
   return geo;
 }

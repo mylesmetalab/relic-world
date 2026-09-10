@@ -137,6 +137,17 @@ same as always.
   (`?seed=`/`?room=`) — off in the shared rolling world everyone lands in by
   default — and behind its own kill switch (`presenceEnabled` in the panel)
   on top of that.
+- **A boulder that takes two.** A handful of big, round boulders (mirroring
+  the two-torch vault's sparse per-site placement, own grid/hash) sit in the
+  lower cave, dense enough — the same push/pull physics as every other
+  dynamic prop, just tuned heavier — that one player pushing continuously can
+  barely creep it forward, while a second player joining in (the existing
+  nearest-player ownership handoff, no new mechanic) clearly moves it
+  further, faster. Rendered as a jittered low-poly dome rather than the usual
+  cone-shaped rock, since a shallow wide cone is just a walkable ramp; wall
+  climbing and ledge-mantling now skip every dynamic prop entirely (they were
+  only ever meant to read terrain), so a boulder always reads as something to
+  push, never something to climb over.
 
 ## How it's built
 
@@ -149,7 +160,9 @@ same as always.
   hatch anchoring computed per-instance in-shader, not one mesh per rock —
   colliders stay one convex hull per rock either way.
 - `src/player/` — Rapier kinematic controller with auto-step and a ledge
-  grab / mantle state machine; third-person boom that shortens on rock;
+  grab / mantle state machine (its wall/ledge raycasts skip every dynamic
+  rigid body, terrain and statics only, so a pushable prop is never
+  mistaken for a climbable wall); third-person boom that shortens on rock;
   figures as packed miniatures or procedural golems, each with its own inks;
   every figure but the Hound swings two arms opposite its legs, reaches
   forward holding a prop or carrying another player, and flails when it is
