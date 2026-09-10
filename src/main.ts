@@ -165,7 +165,10 @@ async function boot(): Promise<void> {
     }
     sound.knock(5);
   };
-  net.onDig = (d) => applyDig(d);
+  net.onDig = (d, peerId) => {
+    applyDig(d);
+    remotes.get(peerId)?.figure.swing();
+  };
   let digT = 0;
   /** March the aim ray in 0.25 m steps looking for the ceiling above the
    *  level the player is standing in. Ceilings are meshes only — no
@@ -234,6 +237,7 @@ async function boot(): Promise<void> {
     const { m, plan } = planned;
     sound.dig(plan.kind);
     digMark.burst(plan.hit, plan.kind === "pit" ? 12 : 22);
+    figure.swing();
     applyDig(m);
     myDigs.push(m);
     if (myDigs.length > 600) myDigs.shift();

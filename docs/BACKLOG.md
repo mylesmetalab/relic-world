@@ -407,6 +407,23 @@ and the arm visibly swings across a pumped-frame sequence; two-tab test —
 dig in tab A, confirm tab B's remote figure for A also swings; confirm a
 Hound-character digger doesn't error (no arms).
 
+**Built (2026-09-10):** shipped as specced — `swing(ms = 300)` + `swingT`
++ an eased windup/strike/settle arc on `arms[0]` in `Figure.update()`,
+wired only at the two named call sites (`digAtAim()` locally,
+`net.onDig` for remotes), untouched `applyDig`. Verified `swingT` hits 0.3
+right after a local dig and rides the arc down over ~18 pumped frames
+(screenshotted mid-strike); Hound (no arms) digs without throwing. The
+remote wiring was verified by calling `net.onDig` directly against a
+synthetic `remotes` entry (its figure's `swingT` jumped to 0.3 exactly as
+wired) rather than over a live two-tab WebRTC handshake, because this
+sandbox blocks the outbound WebSocket to the Nostr signalling relay
+(`wss://chorus.pjv.me/`) — an environment limitation, not a code issue.
+Also found, and left alone as out of scope here: remote figures are only
+ever `place()`d (position + facing), never `update()`'d, so `flail`/
+`reaching`/`swing()` are set on their state but have no render path today
+— a brief-6-era gap, not something this brief introduced or was asked to
+fix.
+
 ## 15. More biome variety (and give biomes some teeth)
 
 **Goal:** today's 7 biomes (`src/world/biomes.ts`) differ only by palette +

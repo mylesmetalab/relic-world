@@ -97,6 +97,9 @@ export class Figure {
   flail = false;
   /** Reach forward — holding a prop, or carrying another player. */
   reaching = false;
+  /** Seconds left of an active dig swing (arms[0]); see `swing()`. */
+  private swingT = 0;
+  private swingDur = 0.3;
 
   constructor(private readonly p: Pipeline) {
     this.material = makeFigureMaterial(p);
@@ -208,6 +211,34 @@ export class Figure {
     return arms;
   }
 
+  /** Trigger a lead-arm ("arms[0]") dig swing: an eased windup-then-strike
+   *  arc, active for `ms` (default 300) of `update()` calls. Takes priority
+   *  over `reaching` (a dig mid-carry still shows the swing) but loses to
+   *  `flail` (being carried while digging is an edge case — flail wins).
+   *  No-op if this figure has no arms (the golem Hound, per `GOLEM_MOTION`). */
+  swing(ms = 300): void {
+    if (this.arms.length === 0) return;
+    this.swingDur = ms / 1000;
+    this.swingT = this.swingDur;
+  }
+
+  /** Windup (raise back) → strike (fast forward swing, peaking early since
+   *  the dig itself lands the moment `swing()` is called) → settle back to
+   *  neutral. `frac` runs 0 → 1 over the swing's duration. */
+  private swingArc(frac: number): number {
+    if (frac < 0.3) {
+      const u = frac / 0.3;
+      return 0.6 * u * (2 - u); // ease-out quad, 0 → 0.6
+    }
+    if (frac < 0.55) {
+      const u = (frac - 0.3) / 0.25;
+      const e = u * u * (3 - 2 * u); // smoothstep, 0.6 → -1.6 (the strike)
+      return 0.6 - 2.2 * e;
+    }
+    const u = Math.min(1, (frac - 0.55) / 0.45);
+    return -1.6 + 1.6 * (1 - (1 - u) * (1 - u)); // ease-out, -1.6 → 0
+  }
+
   /** Place at the feet, turn toward `heading` (world xz, may be zero), bob with speed. */
   update(feet: THREE.Vector3, heading: THREE.Vector3, speed: number, dt: number): void {
     if (heading.lengthSq() > 1e-4) {
@@ -223,6 +254,7 @@ export class Figure {
     const lift = (speed > 0.3 ? Math.abs(Math.sin(this.bob)) * m.bob : 0) + m.float * (0.6 + 0.4 * Math.sin(this.bob * 0.35 + performance.now() * 0.0012));
     this.group.position.set(feet.x, feet.y + lift, feet.z);
     this.group.rotation.y = this.facing;
+    if (this.swingT > 0) this.swingT = Math.max(0, this.swingT - dt);
     if (this.flail) {
       const t = performance.now() * 0.012;
       this.inner.rotation.z = Math.sin(t) * 0.5;
@@ -242,10 +274,14 @@ export class Figure {
       const phase = this.legs.length === 4 ? (i === 0 || i === 3 ? 0 : Math.PI) : i * Math.PI;
       leg.rotation.x = Math.sin(this.bob + phase) * swing;
     });
-    // Arms swing opposite the legs; reach forward holding a prop or carrying.
+    // Arms swing opposite the legs; reach forward holding a prop or carrying;
+    // a dig swing overrides the lead arm (arms[0]) over either of those.
     const armSwing = Math.min(1, speed / 4) * m.armSwing;
     this.arms.forEach((arm, i) => {
-      if (this.reaching) {
+      if (i === 0 && this.swingT > 0) {
+        arm.rotation.x = this.swingArc(1 - this.swingT / this.swingDur);
+        arm.rotation.z = 0;
+      } else if (this.reaching) {
         arm.rotation.x = -1.3;
         arm.rotation.z = (i === 0 ? -1 : 1) * 0.12;
       } else {

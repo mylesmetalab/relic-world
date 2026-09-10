@@ -128,7 +128,9 @@ same as always.
   figures as packed miniatures or procedural golems, each with its own inks;
   every figure but the Hound swings two arms opposite its legs, reaches
   forward holding a prop or carrying another player, and flails when it is
-  the one being carried.
+  the one being carried; digging swings the lead arm through a brief
+  windup-then-strike (`Figure.swing()`), for both the local player and
+  remote diggers.
 - `src/net/` — [trystero](https://github.com/dmotz/trystero) rooms over
   WebRTC; state at 12 Hz, remote figures interpolated; a peer silent for more
   than 8 s (a closed tab or dropped connection that never sent a clean leave)

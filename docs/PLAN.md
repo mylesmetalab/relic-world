@@ -454,6 +454,37 @@ dense Glacier stalagmite cluster, visually confirmed correct (per-rock
 hatching intact, no smearing) and collision-confirmed (walked into the
 cluster, no clipping, no physics-escape rescue firing).
 
+### Twentieth pass (2026-09-10, latest)
+Brief 14, dig swing — arms exist (brief 6) but digging, the game's single
+most common action, didn't use them. `Figure` (`src/player/figure.ts`) gets
+a third time-bounded pose alongside `flail`/`reaching`: `swing(ms = 300)`
+sets a `swingT` countdown (mirrors `PlayerController.stumbleT`) that drives
+an eased windup → strike → settle arc on the lead arm (`arms[0]`) while
+active — priority over `reaching` (a dig mid-carry still shows the swing)
+but under `flail` (being carried while digging is an edge case; flail
+wins); a no-op with no thrown error when `arms.length === 0` (the Hound).
+Wired at exactly the two call sites the brief specced, not inside
+`applyDig` itself: locally in `digAtAim()` alongside `sound.dig`/
+`digMark.burst`, and for remotes in `net.onDig` via
+`remotes.get(peerId)?.figure.swing()` — no new net protocol field, reusing
+the existing `DigMsg` + `peerId`. Verified: `figure["swingT"]` reads 0.3
+right after a local dig and rides the eased arc down to 0 over ~18 pumped
+frames (screenshotted mid-strike, arm visibly extended with dig chips
+flying); a Hound digger no-ops without error; `checkVaultDoors()`'s
+auto-open path calls `applyDig` directly and was confirmed by code
+inspection never to call `swing()`. The remote path (`net.onDig`) was
+verified by invoking it directly against a synthetic remote entry —
+`remotes.get(id).figure.swingT` jumped from stale to 0.3 exactly as
+wired — because this sandbox's outbound WebSocket to the Nostr signalling
+relay (`wss://chorus.pjv.me/`) is blocked, so a live two-tab WebRTC
+handshake couldn't be established here to also confirm it visually; that's
+an environment limitation, not a code change. Separately noted, not fixed
+(out of scope for this brief): remote figures are only ever placed
+(`figure.place()`, position + facing) each frame, never `update()`'d, so
+`flail`/`reaching`/the new `swing()` pose are set on remote figures'
+state but have no visual path to render today — a pre-existing gap from
+brief 6, not introduced here.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
