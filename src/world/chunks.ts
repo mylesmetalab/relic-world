@@ -41,7 +41,10 @@ export class ChunkManager {
     private readonly p: Pipeline,
     private readonly ph: Physics,
     private readonly terrain: Terrain,
-    private readonly radius = 2,
+    /** (2r+1)² window of chunks kept alive around the player. Public for
+     *  verification (`__world.chunks.radius`) — a quality preset's lever,
+     *  fixed at construction. */
+    readonly radius = 2,
   ) {
     p.scene.add(this.root);
     this.props = new Props(p, ph, terrain);

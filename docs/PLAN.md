@@ -307,6 +307,38 @@ vault's floor and pumped 3 frames — landed back on top of the floor
 (`groundAt` + 0.5), screenshotted standing on solid ground. Next up per the
 backlog: quality toggle for phones.
 
+### Fifteenth pass (2026-09-10, latest)
+Quality toggle for phones: `?q=low|med|high` (`resolveQuality`/`QUALITY_PRESETS`
+in `src/world/config.ts`) picks a fixed preset — `printScale`/chunk-window
+radius/ND-pass resolution together — rather than three more sliders, since a
+device tier is a discrete choice, not a continuum; with no `?q=` given it
+auto-picks `low` on a coarse pointer (`matchMedia('(pointer: coarse)')`, the
+same test `src/ui/touch.ts` already uses) and `high` otherwise, preserving
+today's desktop default exactly. `low` = printScale 0.45, chunk radius 1 (a
+3×3 window), ND pass at half the print resolution; `med` keeps `high`'s
+printScale 0.6 and radius 2 (5×5) and only halves the ND pass; `high` is
+today's unchanged default. `createPipeline` takes the printScale (as before)
+plus a new `ndHalfRes` flag that sets `Pipeline.ndScale` (0.5 or 1), consumed
+in `resizePipeline` to size `ndRT` at print-resolution × `ndScale` — the ink
+pass samples it by UV same as before, so no shader change was needed, just a
+blockier normal+depth read at half res. `ChunkManager`'s existing `radius`
+constructor arg (already a parameter, just always called with a literal `2`)
+now takes the preset's value directly, and is now a public readonly field for
+verification. `main.ts` resolves quality before reading `?cfg=`, so an
+explicit `?cfg=` still wins over the preset's `printScale` — the printScale
+slider in the tuning panel is unaffected and still live-tunable either way.
+Verified: typecheck clean; at `?seed=7&q=low` read back
+`quality/qualityPreset/pipeline.{printScale,ndScale}/chunks.radius` as
+`low`/`{0.45,1,true}`/`{0.45,0.5}`/`1`, and `ndRT`'s actual pixel size at half
+the composer's; at `?seed=7` (no `q`, normal desktop pointer) read `high`/
+`{0.6,2,false}`/`{0.6,1}`/`2`/25 loaded chunks (5×5); at `?seed=7&q=med` read
+`med`/`{0.6,2,true}`/ndScale 0.5. Emulated a mobile viewport (coarse pointer)
+with no `?q=` and confirmed auto-pick landed on `low` (screenshot: touch
+controls up, chunk streaming and rendering fine at radius 1). A `?seed=7`
+desktop screenshot at `q=low` shows the game running normally — softer ink
+from the lower printScale, no crashes. Next up per the backlog: prune ghost
+peers.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

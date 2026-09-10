@@ -4,7 +4,7 @@ import { COLORWAYS } from "./render/palette";
 import { initPhysics, rayDistance, rayHit } from "./physics/world";
 import { Terrain, type Level } from "./world/terrain";
 import { ChunkManager } from "./world/chunks";
-import { CFG, configFromUrl, loadConfig } from "./world/config";
+import { CFG, configFromUrl, loadConfig, resolveQuality, QUALITY_PRESETS } from "./world/config";
 import { msUntilRoll, sharedSeed } from "./world/settings";
 import { Input } from "./player/input";
 import { PlayerController } from "./player/controller";
@@ -41,6 +41,14 @@ const seed = shared ? sharedSeed() : Number(seedParam) || 7;
 const roomOverride = url.searchParams.get("room") ?? undefined;
 // Single player: `?solo=1`, or any host whose CSP blocks the relays (Metalab Sites).
 const solo = url.searchParams.get("solo") === "1" || /(^|\.)sites\.metalab\.com$/.test(location.hostname);
+// Quality: `?q=low|med|high`, else auto — `low` on a coarse pointer (phones),
+// `high` (today's desktop default) otherwise. A fixed preset table
+// (`QUALITY_PRESETS` in world/config.ts), not sliders — printScale still
+// seeds the existing live slider, so the panel and `?cfg=` can still tune it
+// from there; `?cfg=` (below) overrides the preset's printScale if given.
+const quality = resolveQuality(url.searchParams.get("q"));
+const qualityPreset = QUALITY_PRESETS[quality];
+CFG.press.printScale = qualityPreset.printScale;
 const urlCfg = configFromUrl() as { config?: unknown; biomes?: unknown } | null;
 if (urlCfg) {
   loadConfig(urlCfg.config ?? urlCfg);
@@ -61,12 +69,12 @@ type Remote = {
 };
 
 async function boot(): Promise<void> {
-  const p = createPipeline(canvas, CFG.press.printScale);
+  const p = createPipeline(canvas, CFG.press.printScale, qualityPreset.ndHalfRes);
   setWorldSeed(p, seed);
   applyConfig(p);
   const ph = await initPhysics();
   const terrain = new Terrain(seed);
-  const chunks = new ChunkManager(p, ph, terrain, 2);
+  const chunks = new ChunkManager(p, ph, terrain, qualityPreset.chunkRadius);
   const spawn = terrain.spawnPoint();
   chunks.buildAll(spawn);
 
@@ -754,6 +762,7 @@ async function boot(): Promise<void> {
 
   (window as unknown as { __world: unknown }).__world = {
     seed, shared, player, cam, terrain, chunks, pipeline: p, figure, net, remotes, photo, sound, isOwner, grab, tune, map, voice, input, cfg: CFG,
+    quality, qualityPreset,
     pump, applyDig, digAtAim, spawnRelic,
     grabPlayer: (id: string) => { carrying = id; net.sendGrabPlayer(id); },
     throwPlayer: (v: [number, number, number]) => { if (carrying) { net.sendThrowPlayer(carrying, v); carrying = null; } },

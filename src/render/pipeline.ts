@@ -59,6 +59,10 @@ export type Pipeline = {
   lastW: number;
   lastH: number;
   lastPrintScale: number;
+  /** ND target resolution = print resolution × this (1 = full, 0.5 = the
+   *  `low`/`med` quality presets' half-res ND pass). Fixed at pipeline
+   *  creation — set via `createPipeline`'s `ndHalfRes` arg. */
+  ndScale: number;
   /** Accumulated time for the press pass grain. */
   time: number;
 };
@@ -212,7 +216,7 @@ export function setFigureColorway(m: THREE.ShaderMaterial, index: number): Color
   return cw;
 }
 
-export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pipeline {
+export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6, ndHalfRes = false): Pipeline {
   // preserveDrawingBuffer so photo mode (and a harness) can read the canvas
   // back after the frame; the cost is one buffer copy per frame.
   const renderer = new THREE.WebGLRenderer({
@@ -317,7 +321,8 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6): Pip
   return {
     renderer, scene, camera, composer, inkPass, ndRT, ndMat,
     rockMat, ceilMat, hullMat, figureMats: new Set(), bgPaletteTex, biomeRamps, inkMap,
-    ndHidden: new Set(), torches: [], printScale, printW: 2, printH: 2, lastW: 0, lastH: 0, lastPrintScale: 0, time: 0,
+    ndHidden: new Set(), torches: [], printScale, printW: 2, printH: 2, lastW: 0, lastH: 0, lastPrintScale: 0,
+    ndScale: ndHalfRes ? 0.5 : 1, time: 0,
   };
 }
 
@@ -404,7 +409,9 @@ export function resizePipeline(p: Pipeline, w: number, h: number): void {
   const rw = Math.max(2, Math.round(w * pr * p.printScale));
   const rh = Math.max(2, Math.round(h * pr * p.printScale));
   p.composer.setSize(rw, rh);
-  p.ndRT.setSize(rw, rh);
+  const ndW = Math.max(2, Math.round(rw * p.ndScale));
+  const ndH = Math.max(2, Math.round(rh * p.ndScale));
+  p.ndRT.setSize(ndW, ndH);
   p.printW = rw;
   p.printH = rh;
   p.inkPass.uniforms.uResolution.value.set(rw, rh);

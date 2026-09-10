@@ -39,6 +39,16 @@ rolls to a new seed every two hours on the clock (the HUD counts down).
 Wherever you are, you see the others' figures and torches, their light prints
 the rock for you too, and what they push, you see move.
 
+`?q=low|med|high` picks a quality preset — with none given it auto-picks
+`low` on a touch device (a coarse pointer) and `high` everywhere else.
+`low` (printScale 0.45, a 3×3 chunk window, the normal+depth pass at half
+resolution) is tuned for a phone GPU that would otherwise drop under 30 fps
+at the desktop's `printScale` 0.6; `med` keeps `high`'s print density and
+view distance and only halves the ND pass; `high` is today's desktop
+default (printScale 0.6, a 5×5 chunk window, full-res ND). `printScale`
+itself is still a live slider in the tuning panel — the preset just seeds
+its starting value, and `?cfg=` overrides it same as always.
+
 ## The rules of the place
 
 - **Unprinted until lit.** Rock is bare paper (with a pencil under-drawing)

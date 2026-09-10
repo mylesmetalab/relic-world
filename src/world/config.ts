@@ -160,3 +160,41 @@ export function configFromUrl(): unknown {
 export function configToUrlParam(obj: unknown): string {
   return btoa(JSON.stringify(obj)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
+
+// ── Quality presets (`?q=low|med|high`) ─────────────────────────────────
+// A phone GPU can drop under 30 fps at the desktop `printScale` (0.6). This
+// is a discrete choice of device tier, not a continuous tunable — a fixed
+// table rather than sliders, so it lives here (for discoverability) instead
+// of in `Tunables`/`tune.ts`. `printScale` itself IS a slider (CFG.press);
+// the chosen preset just seeds its starting value.
+
+export type Quality = "low" | "med" | "high";
+
+export type QualityPreset = {
+  /** Print target resolution = canvas × this. */
+  printScale: number;
+  /** ChunkManager window radius: a (2r+1)² grid of 24 m chunks kept alive. */
+  chunkRadius: number;
+  /** Render the ND (normal+depth) pass at half the print resolution — the
+   *  edge/hatch read comes out a bit blockier, for a quarter of the pass's
+   *  fill cost. */
+  ndHalfRes: boolean;
+};
+
+export const QUALITY_PRESETS: Record<Quality, QualityPreset> = {
+  // Today's desktop default, unchanged.
+  high: { printScale: 0.6, chunkRadius: 2, ndHalfRes: false },
+  // Same view distance and print density as `high`; only the cheapest lever
+  // (ND half-res) is pulled, for mid-tier GPUs.
+  med: { printScale: 0.6, chunkRadius: 2, ndHalfRes: true },
+  // The brief's phone preset.
+  low: { printScale: 0.45, chunkRadius: 1, ndHalfRes: true },
+};
+
+/** `?q=` if it names a known preset; otherwise auto-pick `low` on a coarse
+ *  pointer (touch, no precise mouse — same test `src/ui/touch.ts` uses) and
+ *  `high` everywhere else. */
+export function resolveQuality(param: string | null): Quality {
+  if (param === "low" || param === "med" || param === "high") return param;
+  return typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? "low" : "high";
+}
