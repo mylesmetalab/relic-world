@@ -243,6 +243,31 @@ async function boot(): Promise<void> {
     if (myDigs.length > 600) myDigs.shift();
     net.sendDig(m);
   };
+  // ── Torches run out: only MY placed torches tick down (a peer's own
+  // client owns their countdown and tells me when one goes out via
+  // sendMyTorches/onTorches); world/shrine torches (`placed: false`) are
+  // never in this list at all, so they're untouched no matter how long the
+  // game runs. `reach` already feeds straight into the light radius pushed
+  // to the pipeline each frame, so shrinking it in the last quarter of life
+  // reads as a dimming torch for free — no new shader/uniform needed. ────
+  const TORCH_DIM_FRAC = 0.25;
+  const tickTorches = (dt: number) => {
+    const mine = chunks.props.placedTorches().filter((t) => t.id.startsWith(net.selfId));
+    let expired = false;
+    for (const t of mine) {
+      t.life -= dt;
+      if (t.life <= 0) {
+        chunks.props.removeTorch(t.id);
+        expired = true;
+        continue;
+      }
+      const frac = t.life / t.maxLife;
+      t.reach = frac < TORCH_DIM_FRAC ? TORCH_REACH * Math.max(0.12, frac / TORCH_DIM_FRAC) : TORCH_REACH;
+    }
+    // Don't wait for the periodic 4 s broadcast — an onlooker should see a
+    // torch go dark promptly, not up to 4 s late.
+    if (expired) sendMyTorches();
+  };
   // ── Two-torch vault doors: two placed torches near a vault's door
   // pillars swing it open — the same digTo the pick uses on any wall, so it
   // replicates for free (myDigs / net.sendDig) and late joiners see it via
@@ -289,7 +314,14 @@ async function boot(): Promise<void> {
     const mine = chunks.props.placedTorches().filter((t) => t.id.startsWith(net.selfId));
     net.sendTorches(mine.map((t) => ({ id: t.id, p: [t.mesh.position.x, t.mesh.position.y, t.mesh.position.z] })));
   };
-  net.onTorches = (list) => {
+  net.onTorches = (list, peerId) => {
+    // Reconcile, don't just add: a torch that burned out on the sender's
+    // side is missing from this list, and must go out here too, or every
+    // expired torch would sit lit forever on other players' screens.
+    const ids = new Set(list.map((t) => t.id));
+    for (const t of chunks.props.placedTorches()) {
+      if (t.id.startsWith(peerId) && !ids.has(t.id)) chunks.props.removeTorch(t.id);
+    }
     for (const t of list) chunks.props.addTorch(t.id, t.p[0], t.p[1], t.p[2], true);
   };
   let relics = 0;
@@ -607,6 +639,7 @@ async function boot(): Promise<void> {
 
     chunks.update(player.position);
     chunks.props.update();
+    tickTorches(dt);
     checkVaultDoors();
     propSendT += dt;
     propSnapT += dt;

@@ -96,6 +96,11 @@ same as always.
   Plant a torch by each pillar and the wall opens — a golem relic waits
   inside, on its own plinth. The paper map marks a known vault red until
   it's open, then green.
+- **Torches you plant burn out.** A planted torch (X) lasts a few minutes
+  (`torchLifeSec`), dimming over its last quarter of life before it goes
+  dark and vanishes — keeping two lit at a vault door at once, and finding
+  your way back through a darkening cave, are real choices. World/shrine
+  torches placed by the cave itself never run out.
 - **It sounds like paper and rock.** Everything is synthesized: footfalls, jump and land, knocks scaled by impact, a press roller
   that hums while new rock prints under your torch, and a blip when someone
   starts talking.

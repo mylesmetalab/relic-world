@@ -47,8 +47,10 @@ export type PropState = { k: string; p: [number, number, number]; q: [number, nu
 
 export type ChunkProps = { key: string; props: Prop[]; statics: Array<{ body: RAPIER.RigidBody; collider: RAPIER.Collider }>; alive: boolean; torches: string[]; vaults: string[] };
 
-/** A standing torch: a light that prints the rock around it. */
-export type TorchProp = { id: string; position: THREE.Vector3; reach: number; mesh: THREE.Group; placed: boolean };
+/** A standing torch: a light that prints the rock around it. `life`/`maxLife`
+ *  (seconds) are only meaningful when `placed` — world/shrine torches carry
+ *  `maxLife: Infinity` and are never ticked down. */
+export type TorchProp = { id: string; position: THREE.Vector3; reach: number; mesh: THREE.Group; placed: boolean; life: number; maxLife: number };
 export const TORCH_REACH = 15;
 
 const GOLD = COLORWAYS.findIndex((c) => c.name === "Gold Leaf");
@@ -179,7 +181,8 @@ export class Props {
     mesh.position.set(x, y, z);
     mesh.rotation.y = (x * 7 + z * 3) % 6.28;
     this.root.add(mesh);
-    const t: TorchProp = { id, position: new THREE.Vector3(x, y + 1.35, z), reach: TORCH_REACH, mesh, placed };
+    const maxLife = placed ? CFG.world.torchLifeSec : Infinity;
+    const t: TorchProp = { id, position: new THREE.Vector3(x, y + 1.35, z), reach: TORCH_REACH, mesh, placed, life: maxLife, maxLife };
     this.torches.set(id, t);
     return t;
   }

@@ -520,6 +520,28 @@ view of that torch also disappears within one broadcast interval (~4 s);
 confirm a *world* shrine torch (a vault's door pillar, `placed: false`)
 never dims or disappears no matter how long you wait.
 
+**Built (2026-09-10):** shipped as specced — `TorchProp.life`/`maxLife`
+(`addTorch` sets `maxLife = placed ? CFG.world.torchLifeSec : Infinity`, so
+a shrine torch is structurally exempt), a new `tickTorches(dt)` in
+`src/main.ts` called next to `checkVaultDoors()` that only ever iterates
+`placedTorches().filter(t => t.id.startsWith(net.selfId))`, shrinking
+`reach` over the last quarter of life and calling `removeTorch` +
+`sendMyTorches()` immediately on expiry. `world.torchLifeSec` (default 180)
+added to `config.ts`/`tune.ts`. Also fixed the additive-only `net.onTorches`
+bug called out in the brief: it now removes a peer's torches missing from
+their latest list before applying it, using the `peerId` the handler
+already receives — no new net message. Verified at `?seed=7`: typecheck
+clean; placed a torch and read `life: 180`/`maxLife: 180`/`reach: 15`;
+forced `life = 20` and pumped frames — `reach` fell to ≈6.66, screenshotted
+dim; forced expiry and confirmed the torch left both `chunks.props.torches`
+and `placedTorches()`; pumped 120 frames against a real shrine torch and
+confirmed its `reach` stayed 15 and it was never in the tick list. The
+`onTorches` fix was verified by calling it directly against a synthetic
+peer id with a shrinking torch list (two torches, then one) and confirming
+the missing one was removed, since this sandbox's outbound WebSocket to the
+Nostr signalling relay is still blocked (reconfirmed with two real tabs —
+`net.peers` stayed empty) — an environment limitation, not a code issue.
+
 ---
 
 ## How to work here

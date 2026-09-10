@@ -485,6 +485,51 @@ an environment limitation, not a code change. Separately noted, not fixed
 state but have no visual path to render today — a pre-existing gap from
 brief 6, not introduced here.
 
+### Nineteenth pass (2026-09-10, latest)
+Torches run out (brief 16): re-verified `TorchProp`/`Props.addTorch`/
+`removeTorch`/`placedTorches` and `main.ts`'s `sendMyTorches`/`net.onTorches`/
+`checkVaultDoors` against the real current code before touching anything.
+`TorchProp` (`src/world/props.ts`) gained `life`/`maxLife` (seconds) —
+`addTorch` sets `maxLife = placed ? CFG.world.torchLifeSec : Infinity`, so a
+world/shrine torch (`placed: false`) is structurally exempt regardless of
+what else touches it. A new `tickTorches(dt)` in `src/main.ts`, called each
+frame next to `checkVaultDoors()`, only ever iterates
+`chunks.props.placedTorches().filter(t => t.id.startsWith(net.selfId))` — my
+own placed torches, never a peer's and never a shrine's — decrementing
+`life`, shrinking `reach` down to 12% of `TORCH_REACH` over the last quarter
+of `maxLife` (which feeds the light radius pushed each frame, so it dims for
+free, no shader change), and on expiry calling `removeTorch` plus an
+immediate `sendMyTorches()` rather than waiting for the 4 s periodic
+broadcast. New tunable `world.torchLifeSec` (default 180 s) in
+`src/world/config.ts`, sliderized `[10, 600, 5]` in `src/ui/tune.ts`. Also
+fixed the latent bug the brief called out: `net.onTorches` was additive-only
+(`addTorch` for everything in an incoming list, nothing ever removed) — with
+torches now expiring on a timer this would leave every burned-out torch lit
+forever on other players' screens. It now reconciles per peer: any of that
+peer's placed torches missing from their latest list gets `removeTorch`'d
+before the new list is applied, reusing the existing `peerId` argument
+`onTorches` already receives — no new net message. `checkVaultDoors()` itself
+needed no change: it already re-reads `placedTorches()` every frame, so a
+torch burning out before both pillars are lit just means the door doesn't
+open, and one that's already open stays open (carved into the terrain)
+regardless of what expires afterward. Verified at `?seed=7`: typecheck
+clean; placed a torch via `X` and read back `life: 180`/`maxLife: 180`/
+`reach: 15`; set `life = 20` and pumped frames — `reach` dropped to ≈6.66
+(matching the 12%–100% ramp over the last quarter), screenshotted the
+dimmer torch; drove `life` to expiry and confirmed `chunks.props.torches`
+no longer had the id and `placedTorches()` was empty; pumped 120 frames
+against a real shrine torch (`placed: false`) and confirmed its `reach`
+stayed exactly 15 and it was never present in the `placedTorches()` list
+tickTorches reads from. For the `onTorches` fix, called `net.onTorches`
+directly against a synthetic peer id with a two-torch list, then a
+one-torch list, and confirmed the missing torch was removed — the same
+direct-invocation approach the eighteenth pass used for `onDig`, since this
+sandbox's outbound WebSocket to the Nostr signalling relay
+(`wss://chorus.pjv.me/`) is still blocked (confirmed again via two real
+tabs on `?seed=7`: `net.peers` stayed empty and the console showed the same
+relay-join failure), so a live two-tab WebRTC broadcast couldn't be
+observed directly here — an environment limitation, not a code change.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
