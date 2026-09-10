@@ -11,13 +11,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.1",
     "@dimforge/rapier3d-compat": "0.20.0",
     "three": "0.186.0",
     "trystero": "^0.25.4"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.1",
-    "@capacitor/core": "^8.5.1",
     "@capacitor/ios": "^8.5.1",
     "@types/three": "0.185.4",
     "typescript": "5.9.3",

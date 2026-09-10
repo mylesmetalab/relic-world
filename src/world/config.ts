@@ -5,6 +5,8 @@
  * paste it back and it becomes the default.
  */
 
+import { Capacitor } from "@capacitor/core";
+
 export type Tunables = {
   world: {
     floorBase: number;
@@ -205,10 +207,14 @@ export const QUALITY_PRESETS: Record<Quality, QualityPreset> = {
   low: { printScale: 0.45, chunkRadius: 1, ndHalfRes: true },
 };
 
-/** `?q=` if it names a known preset; otherwise auto-pick `low` on a coarse
- *  pointer (touch, no precise mouse — same test `src/ui/touch.ts` uses) and
- *  `high` everywhere else. */
+/** `?q=` if it names a known preset; otherwise `high` inside the wrapped iOS
+ *  app (Myles wants the app to look the same as the web build, not the phone
+ *  preset — TestFlight testers have real device GPUs, not the low end this
+ *  preset was built for), else auto-pick `low` on a coarse pointer (touch, no
+ *  precise mouse — same test `src/ui/touch.ts` uses) in an actual mobile
+ *  *browser*, `high` everywhere else. */
 export function resolveQuality(param: string | null): Quality {
   if (param === "low" || param === "med" || param === "high") return param;
+  if (Capacitor.isNativePlatform()) return "high";
   return typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? "low" : "high";
 }

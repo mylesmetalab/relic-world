@@ -415,6 +415,23 @@ Myles's side — an Apple Developer Program enrollment, signing in Xcode, and
 the first TestFlight upload — spelled out step by step in
 `docs/BACKLOG.md` brief 12.
 
+### Eighteenth pass (2026-09-10, latest)
+Myles wants the iOS app to look like the web build, not the phone quality
+preset from brief 10 — TestFlight testers have real device GPUs, not the
+low end that preset targets. `resolveQuality()` (`src/world/config.ts`) now
+checks `Capacitor.isNativePlatform()` before the coarse-pointer test: the
+wrapped app always gets `high` (printScale 0.6, chunk radius 2, full-res ND
+pass) regardless of touch input, while an actual mobile *browser* (Safari on
+a phone visiting the site directly, not through the app) still auto-picks
+`low` exactly as before — `?q=` still overrides either way. `@capacitor/core`
+moved from `devDependencies` to `dependencies` since it's now imported at
+runtime in the shipped bundle, not just used by the `cap` CLI. Verified:
+desktop web still resolves `high`, an emulated mobile-web viewport (coarse
+pointer) still resolves `low`, and a rebuilt/reinstalled Simulator app
+(`xcodebuild` → `cap sync` → `xcrun simctl install`/`launch`) screenshots at
+full density (61 fps in the HUD, no softened hatching). No web build
+behavior changed (native-only branch), so no Metalab Sites republish.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
