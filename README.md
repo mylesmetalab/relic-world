@@ -148,6 +148,11 @@ same as always.
   climbing and ledge-mantling now skip every dynamic prop entirely (they were
   only ever meant to read terrain), so a boulder always reads as something to
   push, never something to climb over.
+- **Getting knocked down isn't just for falls.** The same camera thump, ink-
+  chip puff and brief stumble a hard landing gives you now also fires if a
+  fast-thrown prop, or another player thrown/flung at speed, passes close by
+  — an ordinary push or a normal walk-up stays quiet (`impactPropSpeed`,
+  `impactPlayerSpeed`, `impactRadius` in the panel set the cutoffs).
 
 ## How it's built
 

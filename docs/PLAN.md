@@ -716,6 +716,59 @@ adjusting their approach (as this session's scripted "reposition after
 sliding off" test did) shouldn't hit it often, but it is a real edge case
 worth knowing about.
 
+### Twenty-fourth pass (2026-09-10, latest)
+Brief 19, getting knocked down: re-verified the inline hard-landing block in
+`src/main.ts` (`wasGrounded`/`vyBefore`, `cam.thump`, `digMark.burst`,
+`player.stumbleT`), `Prop.lastV`/`onKnock` in `src/world/props.ts`, and the
+`Remote` type's position-only tracking against the real current code before
+touching anything. Extracted the landing feedback into a reusable
+`applyImpact(k: number)` closure in `main.ts` (same 0..1 magnitude curve the
+landing code always used) and added two new per-frame proximity+speed
+checks that call it, exactly per the brief: `checkPropImpacts()` walks a new
+`Props.dynamicProps()` accessor (mirrors `placedTorches()`'s style),
+comparing each awake, un-held dynamic prop's live Rapier body speed and
+distance against new `impactPropSpeed`/`impactRadius` tunables; the
+remote-player check lives inline in the existing per-frame remotes loop,
+deriving a per-frame velocity from the position delta already computed there
+(`remotePrev` vs. the just-lerped `r.pos`, divided by `dt` — no new net
+field) and comparing against `impactPlayerSpeed`/`impactRadius`. New
+tunables (`impactPropSpeed: 6`, `impactPlayerSpeed: 10`, `impactRadius: 1.8`)
+in `CFG.player`, sliderized in `src/ui/tune.ts`.
+
+One real hazard found in-browser, not just guessed at: grabbing another
+player snaps their broadcast position toward the carrier's hand between
+network ticks, which the remote-speed derivation would otherwise read as an
+enormous, spurious "thrown" velocity the instant a grab starts (confirmed by
+calculation and then by testing) — fixed with a `heldRemoteIds` set (built
+each frame from my own `carrying` var plus every peer's broadcast `g` field,
+"who I'm carrying") that skips the impact check for anyone currently held,
+so only real free flight after a release counts. Held props needed no
+equivalent fix: they're kinematic while carried, so `body.linvel()` already
+reads inert.
+
+Verified at `?seed=7`: typecheck clean. Prop case — teleported a real
+dynamic prop from `chunks.props.dynamicProps()` to fly past the player
+in-air at 12 m/s, offset to pass beside rather than straight through:
+`stumbleT` jumped to 0.314 and `cam.shakeMag` to 0.237 at the moment it
+closed to 1.65 m, matching the scaling formula exactly by hand-calculation;
+a second run at 3 m/s (below `impactPropSpeed`) approaching to within 0.77 m
+never moved `stumbleT` off 0 across 25 frames. **Live two-tab test**: two
+real tabs on `?seed=7` found each other in `net.peers` within seconds; had
+tab A `grabPlayer`/`throwPlayer` tab B's player with an upward-lobbed,
+fast horizontal velocity aimed back near A's own position, and polled A with
+a real-time async loop (necessary because this sandbox's background tab
+kept running its own render loop live, not frozen, so the flight played out
+in wall-clock time across both tabs) — watched B's synced remote position
+close to 1.5-1.6 m of A while A's `stumbleT`/`cam.shakeMag` flipped from 0 to
+0.232/0.151 and decayed back to 0 over the following ~0.25 s as `stumbleT`
+ticked down, a genuine cross-tab detection of A's own client reading B's
+network-synced speed. Confirmed the grab itself (carry, no throw yet) never
+false-triggers despite the position snap. Confirmed ordinary contact doesn't
+trigger either way: a real dynamic prop pushed into the player at 3 m/s
+never crossed the threshold, and B walking at RUN speed (7.2 m/s, launched
+and pumped for real, not simulated) all the way to 0.94 m from A left A's
+`stumbleT` at 0 throughout.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

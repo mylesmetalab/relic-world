@@ -440,6 +440,7 @@ async function boot(): Promise<void> {
   const raycaster = new THREE.Raycaster();
   let lastSpeed = 0;
   const tmp = new THREE.Vector3();
+  const remotePrev = new THREE.Vector3();
   const marchPt = new THREE.Vector3();
   const peerPositions = new Map<string, { x: number; y: number; z: number }>();
   let acc = 0;
@@ -452,6 +453,40 @@ async function boot(): Promise<void> {
   // don't step (dt just under 1/60) used to swallow it.
   let jumpQueued = false;
   const STEP = 1 / 60;
+
+  // ── The hard-landing feedback (brief 9) as a reusable helper: a camera
+  // thump, an ink-chip puff at the player's feet (the same chip system a dig
+  // throws), and a brief no-input stumble. `k` is 0..1, how far past
+  // whatever threshold the triggering speed got (12 m/s of headroom, same
+  // curve the landing code always used). Brief 19 retriggers this from two
+  // more causes — a thrown prop or a thrown/fast player passing close by —
+  // nothing new about the feedback itself, just new callers. ─────────────
+  const applyImpact = (k: number): void => {
+    const P = CFG.player;
+    cam.thump(P.landThumpMag * (0.4 + 0.6 * k));
+    digMark.burst(tmp.copy(player.position).setY(player.position.y + 0.05), Math.round(P.landChipCount * (0.5 + 0.5 * k)));
+    player.stumbleT = P.landStumbleDur * (0.6 + 0.4 * k);
+  };
+
+  // ── Getting struck by a thrown prop (brief 19): `Prop.lastV`/`onKnock`
+  // already tracks per-frame velocity for the knock SOUND; this checks the
+  // body's live speed directly against a nearby, awake, un-held dynamic prop
+  // — held props are kinematic with no real velocity, so no extra guard is
+  // needed there beyond skipping `heldIds` for clarity. Scaled the same way
+  // a hard landing scales by how far past its threshold the fall got. ─────
+  const checkPropImpacts = (): void => {
+    const R2 = CFG.player.impactRadius * CFG.player.impactRadius;
+    for (const prop of chunks.props.dynamicProps()) {
+      if (chunks.props.heldIds.has(prop.id)) continue;
+      const v = prop.body.linvel();
+      const speed = Math.hypot(v.x, v.y, v.z);
+      if (speed <= CFG.player.impactPropSpeed) continue;
+      const t = prop.body.translation();
+      const dx = t.x - player.position.x, dy = t.y - player.position.y, dz = t.z - player.position.z;
+      if (dx * dx + dy * dy + dz * dz > R2) continue;
+      applyImpact(Math.min(1, (speed - CFG.player.impactPropSpeed) / 12));
+    }
+  };
 
   const switchCharacter = (dir: number) => {
     charIndex = (charIndex + dir + cast.length) % cast.length;
@@ -625,18 +660,10 @@ async function boot(): Promise<void> {
         if (!wasGrounded && player.grounded && vyBefore < -3) {
           sound.land(vyBefore);
           // Hard landing: a 30 m drop into a Cathedral vault is intended, but
-          // it should land with weight — a camera thump, a puff of ink chips
-          // at the landing point (the same chip system a dig throws), and a
-          // brief stumble where movement input is dampened. Scaled by how far
+          // it should land with weight — see applyImpact. Scaled by how far
           // past the "hard" threshold the fall speed got, so a small hop off
           // a ledge stays silent.
-          const P = CFG.player;
-          if (-vyBefore > P.landHardSpeed) {
-            const k = Math.min(1, (-vyBefore - P.landHardSpeed) / 12);
-            cam.thump(P.landThumpMag * (0.4 + 0.6 * k));
-            digMark.burst(tmp.copy(player.position).setY(player.position.y + 0.05), Math.round(P.landChipCount * (0.5 + 0.5 * k)));
-            player.stumbleT = P.landStumbleDur * (0.6 + 0.4 * k);
-          }
+          if (-vyBefore > CFG.player.landHardSpeed) applyImpact(Math.min(1, (-vyBefore - CFG.player.landHardSpeed) / 12));
         }
       }
       // Physics escape: if the player ever ends up below every level's floor
@@ -659,6 +686,7 @@ async function boot(): Promise<void> {
     chunks.props.update();
     tickTorches(dt);
     checkVaultDoors();
+    checkPropImpacts();
     propSendT += dt;
     propSnapT += dt;
     torchSendT += dt;
@@ -718,15 +746,33 @@ async function boot(): Promise<void> {
 
     const k = 1 - Math.exp(-dt * 10);
     peerPositions.clear();
+    // A remote currently being carried (by me, or — per their own broadcast
+    // `g`, who THEY'RE carrying — by anyone) has its position snap toward a
+    // hand each frame; that snap must never itself read as a "thrown player"
+    // impact, only real free flight after release does.
+    const heldRemoteIds = new Set<string>();
+    if (carrying) heldRemoteIds.add(carrying);
+    for (const peer of net.peers.values()) if (peer.state.g) heldRemoteIds.add(peer.state.g);
     for (const [id, r] of remotes) {
       const st = net.peers.get(id)?.state;
       if (!st) continue;
+      remotePrev.copy(r.pos);
       r.pos.lerp(tmp.set(st.p[0], st.p[1], st.p[2]), k);
       r.torch.lerp(tmp.set(st.t[0], st.t[1], st.t[2]), k);
       let d = st.f - r.facing;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       r.facing += d * k;
       r.speed = st.s;
+      // Getting struck by a thrown/flung player (brief 19): a per-frame
+      // velocity derived purely from the position delta already tracked
+      // above, no new net field. Runs identically on every client — if A
+      // gets thrown into B, B's own client sees A's derived speed here.
+      if (!heldRemoteIds.has(id) && dt > 0) {
+        const remoteSpeed = remotePrev.distanceTo(r.pos) / dt;
+        if (remoteSpeed > CFG.player.impactPlayerSpeed && r.pos.distanceTo(player.position) < CFG.player.impactRadius) {
+          applyImpact(Math.min(1, (remoteSpeed - CFG.player.impactPlayerSpeed) / 12));
+        }
+      }
       if (carrying === id) r.pos.copy(holdPoint).setY(holdPoint.y - 0.6);
       r.figure.flail = carrying === id || (st.g == null && !!st.h) || false;
       r.figure.reaching = !!st.g || !!st.ho;

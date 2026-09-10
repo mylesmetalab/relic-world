@@ -210,6 +210,12 @@ export class Props {
     return [...this.torches.values()].filter((t) => t.placed);
   }
 
+  /** Every dynamic prop, for main.ts's per-frame proximity/impact checks (a
+   *  thrown prop passing close to the local player — brief 19). */
+  dynamicProps(): Prop[] {
+    return [...this.all].filter((p) => p.dynamic);
+  }
+
   /** Drop a golden relic right here (debug / spawn button). */
   spawnRelicAt(x: number, z: number): void {
     const key = `spawn:${Date.now()}`;

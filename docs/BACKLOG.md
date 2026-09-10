@@ -866,6 +866,33 @@ actually works, so attempt this for real. Confirm a normal, moderate walk
 into another player or a slow-moving prop does NOT trigger it (the
 threshold should exclude ordinary contact).
 
+**Built (2026-09-10):** shipped as specced, plus a real hazard caught by
+testing rather than guessed at. `applyImpact(k)` in `src/main.ts` extracts
+the landing feedback verbatim; `checkPropImpacts()` walks a new
+`Props.dynamicProps()` accessor (`src/world/props.ts`), skipping held props;
+the remote-player check runs inline in the existing per-frame remotes loop,
+deriving speed from the position delta already computed there (a new
+`remotePrev` scratch vector vs. the just-lerped `r.pos`, over `dt`) — no new
+net field either way. New tunables `impactPropSpeed` (6), `impactPlayerSpeed`
+(10), `impactRadius` (1.8) in `CFG.player` + `src/ui/tune.ts`. The hazard: a
+grab snaps the carried player's broadcast position toward the carrier's hand
+between network ticks, which read as an enormous fake "thrown" velocity the
+instant a grab started — fixed with a `heldRemoteIds` set (from my own
+`carrying` var plus every peer's broadcast `g` field) that skips the check
+for anyone currently held, so only real flight after release counts.
+Verified at `?seed=7`: typecheck clean; a real dynamic prop flown past the
+player in-air at 12 m/s triggered `stumbleT`/`cam.shakeMag` at the exact
+scaling the formula predicts, a 3 m/s prop against the player never did.
+**Live two-tab test**: real peers found each other in `net.peers`; tab A
+grabbed and threw tab B's player back near its own position with a real
+upward-lobbed velocity, and polling A with a real-time async loop (the
+sandbox's background tab kept simulating live, not frozen) showed A's
+`stumbleT`/`shakeMag` flip on as B's synced position closed to ~1.5 m and
+decay back to 0 over the next ~0.25 s — a genuine cross-tab detection, not a
+direct-invocation fallback. The grab itself (no throw yet) never
+false-triggered; B walking at real RUN speed (7.2 m/s, launched and pumped
+for real) all the way to 0.94 m from A never triggered it either.
+
 ---
 
 ## How to work here

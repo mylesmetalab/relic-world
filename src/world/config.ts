@@ -117,6 +117,17 @@ export type Tunables = {
     /** A physics escape: how far below every level's floor (metres) before
      *  the player is teleported up to `terrain.groundAt`. */
     groundEscapeMargin: number;
+    /** Speed (m/s) a nearby dynamic prop's body must exceed to register as
+     *  getting struck by it — the same hard-landing feedback (camera thump,
+     *  chip puff, stumble), retriggered. An ordinary push/kick stays below it. */
+    impactPropSpeed: number;
+    /** Speed (m/s) a nearby remote player's derived velocity must exceed to
+     *  register as getting struck by them (thrown/flung into you). Above
+     *  ordinary walk/run speed so normal contact never triggers it. */
+    impactPlayerSpeed: number;
+    /** Radius (m) around the local player a fast prop or player must be
+     *  within to register as an impact — the player's capsule plus a bit. */
+    impactRadius: number;
   };
   controls: {
     /** Look-sensitivity multiplier applied to mouse deltas — pointer-locked
@@ -157,7 +168,7 @@ export const DEFAULTS: Tunables = {
   press: { printScale: 0.6, misreg: 0.6, edgeW: 1.0, depthCut: 0.012, normalCut: 0.5, grain: 0.9, speck: 0.004, halftone: 0, halftoneScale: 4, halftoneAngle: 20, depthStrange: 1 },
   dig: { radius: 1.2, depth: 0.3, tunnelRadius: 1.2, rate: 5, reach: 4.5, stepUp: 1.3 },
   figure: { hull: 0.55, hatchRange: 0.5, black: 0.1, pitch: 8, nib: 0.75, rim: 0.4, fill: 0.3, stipple: 0.06, formFollow: 0.6, zoneSoft: 0.04, zoneJitter: 0.035, hiCut: 0.78, hatchStyle: 0 },
-  player: { landHardSpeed: 10, landStumbleDur: 0.4, landThumpMag: 0.35, landChipCount: 20, groundEscapeMargin: 4 },
+  player: { landHardSpeed: 10, landStumbleDur: 0.4, landThumpMag: 0.35, landChipCount: 20, groundEscapeMargin: 4, impactPropSpeed: 6, impactPlayerSpeed: 10, impactRadius: 1.8 },
   controls: { mouseSens: 1.0, trackpadSens: 1.6 },
   presence: { wanderSpeed: 1.0, fleeSpeed: 3.2, fleeRadius: 12, retargetSec: 6, wanderRadius: 10, hearRadius: 18 },
 };
