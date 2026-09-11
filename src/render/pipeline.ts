@@ -348,6 +348,9 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6, ndHa
       uPaper: { value: new THREE.Color(PAPER) },
       uDepth: { value: 0 },
       uDepthStrange: { value: 1 },
+      uFar: { value: ND_FAR },
+      uInverseProjection: { value: new THREE.Matrix4() },
+      uCameraWorld: { value: new THREE.Matrix4() },
     },
     vertexShader: INK_VERTEX,
     fragmentShader: INK_FRAGMENT,
@@ -498,6 +501,12 @@ export function renderFrame(p: Pipeline, dt: number): void {
 
   p.time += dt;
   p.inkPass.uniforms.uTime.value = p.time;
+  // The real scene camera moves every frame; the ink pass needs its current
+  // inverse projection + world matrix to reconstruct world position from
+  // the ND pass's depth (grain/speck are keyed to the page, not the lens —
+  // see the comment in shaders.ts).
+  p.inkPass.uniforms.uInverseProjection.value.copy(camera.projectionMatrixInverse);
+  p.inkPass.uniforms.uCameraWorld.value.copy(camera.matrixWorld);
   p.composer.render();
 }
 

@@ -1234,6 +1234,47 @@ now near-black and visibly darker than the surrounding ground — screenshotted.
 Typecheck clean; pushed to `origin/main`
 and republished.
 
+### Thirty-seventh pass (2026-09-11): grain and speck were glued to the screen, not the page
+Myles: "can the speck not be applied not as just a blanket overlay?" Right
+diagnosis, and it's the exact risk the project's own "Known risks" section
+already named — "fixed print density on a moving camera can read as a
+screen texture on fast turns" — just never fixed. `uSpeck`/`uGrain` in
+`INK_FRAGMENT` were keyed by raw screen-pixel coordinate (`pp = floor(vUv *
+uResolution)`), and applied to every pixel including empty sky with no
+geometry at all — a texture glued to the lens, not the paper: pan the
+camera and it swims across the rock instead of staying where the rock is,
+and appears over nothing just as readily as over rock.
+
+Fixed by reconstructing true WORLD position per-fragment (the standard
+deferred-shading "view ray × linear depth" technique) and keying grain and
+speck off THAT instead of screen pixels — a property of the sheet, not the
+screen. Needed the ND pass's own linear depth (already there, just
+normalized — `uFar` un-normalizes it) plus two new uniforms threaded from
+the real scene camera each frame in `pipeline.ts`'s `renderFrame`:
+`uInverseProjection` (`camera.projectionMatrixInverse`) and `uCameraWorld`
+(`camera.matrixWorld`) — this pass is a full-screen orthographic quad, so
+its own `projectionMatrix`/`modelViewMatrix` are the quad's trivial ones,
+not the camera that actually rendered the scene, hence needing to pass the
+real camera's matrices in explicitly. Both grain and speck now also gate on
+`hasGeo` (already computed for the halftone dots) so they only appear on
+actual rendered surfaces, never on empty background.
+
+Verified two ways: visually, camera panned significantly from a fixed
+position, grain stays clean and consistent on the rock rather than reading
+as noise (screenshotted two very different look angles from the same
+spot). Numerically, more rigorously: reconstructed a real screen-centre
+world position via the exact same matrix math in JS against a live
+`gl.readPixels` of the ND depth buffer, and independently raycast the same
+direction through the analytic terrain fields for a ground-truth hit point
+— X and Y matched to 6+ significant figures (0.499963.../4.380099... on
+both sides, computed independently), confirming the reconstruction itself
+is correct; a small residual gap in Z tracked to the project's own
+documented analytic-field-vs-rendered-mesh discrepancy (Known risks:
+heightfield orientation/faceting), not the new code — confirmed by
+shrinking distance-proportionally rather than a fixed offset, and by X/Y
+(same formula, same matrices) being exact. Typecheck clean; pushed to
+`origin/main` and republished.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
@@ -1262,6 +1303,8 @@ and republished.
   by casting rays and comparing to the analytic height; a mismatch is logged.
 - **Fixed print density on a moving camera** can read as a screen texture on
   fast turns. Mitigations: camera smoothing, slightly lower misregistration
-  than the tuner's default.
+  than the tuner's default. Grain/speck specifically were fixed properly
+  (thirty-seventh pass) — reconstructed world position, keyed off that
+  instead of screen pixels, so they no longer swim with the camera.
 - **Draw calls.** The ND pass doubles them. Rocks per chunk are capped and
   the chunk window is 5×5; instancing is the next lever if needed.

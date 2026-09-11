@@ -520,10 +520,34 @@ uniform vec3 uPaper;
 // deeper the page came from.
 uniform float uDepth;
 uniform float uDepthStrange;
+// Grain/speck used to be keyed by raw screen-pixel coordinate (pp) — a
+// texture glued to the LENS, not the page: pan or turn and it swims across
+// the rock instead of staying put on it, the exact "screen texture on fast
+// turns" the project's own known-risks list already named as a danger of a
+// fixed print density. These three let the fragment reconstruct true WORLD
+// position from the ND pass's linear depth (uFar un-normalizes depthAt
+// back to real view-space depth) plus the real scene camera's own inverse
+// projection and world matrix — this is a full-screen orthographic quad
+// pass, so projectionMatrix/modelViewMatrix here are the quad's trivial
+// ones, not the camera that actually rendered the scene.
+uniform float uFar;
+uniform mat4 uInverseProjection;
+uniform mat4 uCameraWorld;
 varying vec2 vUv;
 
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+// Reconstructs the WORLD-space point a given screen UV + linear view depth
+// actually is — the standard "view ray × depth" deferred-shading trick.
+// uv01 is 0..1; d0 is the ND pass's own normalized depth (depthAt).
+vec3 reconstructWorldPos(vec2 uv01, float d0) {
+  vec4 clip = vec4(uv01 * 2.0 - 1.0, 0.0, 1.0);
+  vec4 viewPt = uInverseProjection * clip;
+  viewPt /= viewPt.w;
+  vec3 viewRay = viewPt.xyz / max(-viewPt.z, 1e-5); // scaled so viewRay.z == -1
+  vec3 viewPos = viewRay * (d0 * uFar);
+  return (uCameraWorld * vec4(viewPos, 1.0)).xyz;
+}
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
@@ -598,13 +622,21 @@ void main() {
   float dots = halftoneDots(pp, uHalftoneAngle, uHalftoneScale, shadowAmt * uHalftone) * hasGeo;
   c *= mix(1.0, 0.88, dots);
 
-  // Paper tooth (multiplicative), specks of bare paper, grain. The sheet
-  // dims and specks thicken with depth.
-  float tooth = mix(0.86, 1.02, vnoise(pp * 0.85) * 0.6 + vnoise(pp * 2.9) * 0.4);
-  c *= mix(1.0, tooth, uGrain);
+  // Paper tooth (multiplicative) and specks of bare paper: a property of
+  // the SHEET the rock is printed on, so it has to be keyed by where that
+  // patch of paper actually is in the world, not by which screen pixel
+  // happens to be looking at it right now — otherwise turning the camera
+  // slides the grain across the rock like a dirty lens, not paper texture.
+  // Only where there's real geometry (hasGeo) — empty sky isn't printed on
+  // anything, so it doesn't get a texture either. The sheet dims and
+  // specks thicken with depth, same as before.
+  vec3 worldPos = reconstructWorldPos(vUv, d0);
+  vec2 wp = worldPos.xz * 12.0;
+  float tooth = mix(0.86, 1.02, vnoise(wp * 0.85) * 0.6 + vnoise(wp * 2.9) * 0.4);
+  c *= mix(1.0, mix(1.0, tooth, hasGeo), uGrain);
   vec3 paper = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
-  float speck = uSpeck * (1.0 + depthAmt * 3.0);
-  if (hash(pp + floor(uTime * 0.0)) > 1.0 - speck) c = mix(c, paper, 0.7);
+  float speck = uSpeck * (1.0 + depthAmt * 3.0) * hasGeo;
+  if (hash(wp) > 1.0 - speck) c = mix(c, paper, 0.7);
 
   gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
