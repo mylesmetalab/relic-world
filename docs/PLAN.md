@@ -878,6 +878,39 @@ the default. Wired into the shared toon material (`makeToonMaterial` in
 uniforms) and figures together; not wired into the ceiling material, which
 uses an unrelated shader with no `blackCut` concept.
 
+### Twenty-eighth pass (2026-09-11): a frozen throw-arc/outline stuck on screen forever
+Found from a real screenshot Myles shared showing a jagged white cluster
+hanging in open space, unattached to any wall. Traced with a property
+trap on `Grab`'s own `arc.visible` (logging every write with a stack
+trace, not guessing) to `renderFrame()` in `src/render/pipeline.ts`:
+`p.ndHidden` holds every mesh that should sit out the ND (normal+depth)
+key-plate pass — Grab's outline/player-outline/tether/throw-arc/landing-
+ring, DigMark's marker and ink chips, every figure's and prop's inverted-
+hull contour. `renderFrame` hid them all for the ND pass, then restored
+them ALL to a hardcoded `visible = true` afterward — fine for hulls that
+are always meant to be visible, but wrong for anything ALSO independently
+shown/hidden by its own owner's logic that same frame (`Grab.render()`
+correctly sets `arc`/`ring`/`tether`/`outline` back to `false` once nothing
+is held or targeted — and then the ND-hidden restore step silently
+overwrote that back to `true`, one call later in the same frame). Once
+such a mesh was ever given real, non-degenerate geometry (any first grab,
+even one immediately released), it rendered forever after regardless of
+game state — exactly the persistent jagged shape in the screenshot.
+Fixed by remembering each object's own visibility going into the ND-hide
+step (a `Map<Object3D, boolean>`) and restoring to THAT instead of a
+blanket `true` — a no-op for the always-visible cases (hulls), a real fix
+for the sometimes-hidden ones. Verified with a live property trap both
+ways: after a real grab → target → grab → throw sequence (`grab.
+grabOrDrop`/`grab.throw` called for real, not hand-set state), `arc`/
+`ring`/`tether`/`outline` all correctly stay `false` across 30+ subsequent
+frames (previously flipped back to `true` one frame later, proven by the
+trap's stack trace pointing straight at `renderFrame`'s restore loop); a
+genuinely-still-targeted object's outline still correctly stays `true`
+across many frames too, so the fix doesn't break the normal case.
+Screenshotted a real grab→throw→settle sequence at Myles's own seed
+(2866): clean, no stray shape. Typecheck clean; pushed to `origin/main`
+and republished (visible rendering fix).
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

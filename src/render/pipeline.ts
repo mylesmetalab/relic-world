@@ -453,7 +453,15 @@ export function renderFrame(p: Pipeline, dt: number): void {
   p.inkMap.flush();
   const prevBackground = scene.background;
   const prevClear = renderer.getClearColor(new THREE.Color());
-  for (const o of p.ndHidden) o.visible = false;
+  // Remember each object's OWN visibility (not a blanket true) — several of
+  // these (Grab's outline/tether/arc/ring, DigMark's marker/chips) are also
+  // independently shown/hidden by their owner's own game logic each frame.
+  // Restoring to a hardcoded `true` here clobbered that: once such an
+  // object was ever given real (non-empty) geometry, it would render
+  // forever after, regardless of its owner having correctly set it back to
+  // `false` — a frozen throw-arc or outline stuck on screen indefinitely.
+  const ndHiddenWas = new Map<THREE.Object3D, boolean>();
+  for (const o of p.ndHidden) { ndHiddenWas.set(o, o.visible); o.visible = false; }
   scene.overrideMaterial = p.ndMat;
   scene.background = null;
   renderer.setClearColor(0x8080ff, 1); // "no geometry": normal (0,0), depth = far
@@ -463,7 +471,7 @@ export function renderFrame(p: Pipeline, dt: number): void {
   renderer.setClearColor(prevClear, 1);
   scene.overrideMaterial = null;
   scene.background = prevBackground;
-  for (const o of p.ndHidden) o.visible = true;
+  for (const o of p.ndHidden) o.visible = ndHiddenWas.get(o) ?? true;
 
   p.time += dt;
   p.inkPass.uniforms.uTime.value = p.time;
