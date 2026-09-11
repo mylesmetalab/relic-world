@@ -154,8 +154,9 @@ same as always.
   fast-thrown prop, or another player thrown/flung at speed, passes close by
   — an ordinary push or a normal walk-up stays quiet (`impactPropSpeed`,
   `impactPlayerSpeed`, `impactRadius` in the panel set the cutoffs).
-- **Night takes your ink back.** A day/night cycle (`dayNightCycleSec`, ~10
-  minutes by default) runs everywhere, shared world included. By day,
+- **Night takes your ink back.** A day/night cycle (`dayNightCycleSec`, a
+  minute by default so you can watch it happen — tune it up for something
+  slower) runs everywhere, shared world included. By day,
   "unprinted until lit" works as always — once inked, always printed. At
   night that permanence stops applying: a place you explored earlier goes
   dark again the moment nothing is actually lighting it right now, unless a
@@ -165,10 +166,10 @@ same as always.
   bubble by day, and night looked like day everywhere a player stood until
   that came down. Let a planted torch run out at night and its patch goes
   dark with it. An unlit patch at night fades toward near-black, not bright
-  paper — it genuinely reads as dark, not just a dimmer page; the ink-pass's
-  own silhouette/edge lines still draw over it regardless, so an unlit
-  shape still reads by its outline in the dark, until a torch reveals its
-  real colour — and only a torch you actually have real line of sight to
+  paper, and shows a monochrome sketch of its real hatching or brush-arc
+  strokes rather than going flat — the form and its texture read in the
+  dark, same as the daytime pencil under-drawing, just without colour until
+  a torch reveals it — and only a torch you actually have real line of sight to
   counts at all; one behind a wall or on a level above you no longer lights
   your side of it just because you're nominally within its reach. The
   surface itself reads duskier as night falls (still bare

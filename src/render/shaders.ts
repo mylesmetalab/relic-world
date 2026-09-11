@@ -398,6 +398,19 @@ void main() {
     float gateC = step(0.38, vnoise(vec2(vPosW.z * 1.1 - vPosW.x * 0.6, vPosW.y * 0.9) + 9.0));
     ink = max(ink, (1.0 - smoothstep(0.0, 0.016, ridge)) * gateC * cracks);
   }
+  // Night sketch reuses this exact hatch -- same density increase with
+  // shadow, same surface-following direction (d1), same stipple/cracks --
+  // captured BEFORE the blackCut override just below flattens deep shadow
+  // into a solid fill. A first attempt fed the POST-blackCut ink into the
+  // night mask and read as a flat blanket with no relation to the rock's
+  // form on any biome with a high blackCut (Root Cellar, 0.35, covers most
+  // surfaces this way). A second attempt swapped in an entirely separate,
+  // uniform, single-direction pattern to dodge that -- which fixed the
+  // flatness but broke the opposite thing this session's feedback called
+  // out: it no longer shaded or shaped itself with the rock (elevation,
+  // shadow, form) the way daytime ink does. This is the fix for both: the
+  // real tone/form-driven hatch, just without the final solid-fill clamp.
+  float nightInk = ink;
   if (tone < blackCut) ink = 1.0;
 
   vec3 col = mix(fill, uInk, ink);
@@ -429,7 +442,15 @@ void main() {
     vec3 paperDay = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
     vec3 paper = mix(paperDay, uInk, uNight * 0.92);
     vec3 pencil = mix(paper, paper * 0.82, step(tone, blackCut) * 0.6);
-    col = mix(pencil, col, printed);
+    // At night, unprinted doesn't just mean flat and dark — it means a
+    // monochrome SKETCH: the same real cross-hatch coverage (ink, already
+    // computed above from tone/direction) darkening the paper, just with no
+    // colour from the biome's ramp yet. "The form reads before the ink
+    // lands" (the existing daytime pencil idea), carried further: at night
+    // you get the form AND its texture, only the colour waits for a torch.
+    vec3 nightSketch = mix(paper, paper * 0.4, nightInk);
+    vec3 unprinted = mix(pencil, nightSketch, uNight);
+    col = mix(unprinted, col, printed);
   }
 
   gl_FragColor = vec4(col, 1.0);
@@ -800,10 +821,15 @@ void main() {
       ? texture2D(uInkMap, muv).r : 0.0;
     float printed = smoothstep(0.08, 0.5, mix(max(inked, lit), lit, uNight));
     // See TOON_FRAGMENT's matching block: fades toward dark at night rather
-    // than just dimming, so an unlit ceiling patch actually reads as dark.
+    // than just dimming, so an unlit ceiling patch actually reads as dark —
+    // and, same as there, shows a monochrome sketch of the real brush-arc
+    // strokes (the same ink mask above) rather than going flat, so the
+    // form and its texture read before a torch brings the colour.
     vec3 paperDay = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
-    vec3 paper = mix(paperDay, vec3(0.02, 0.012, 0.03), uNight * 0.92);
-    col = mix(paper, col, printed);
+    vec3 paperNight = mix(paperDay, vec3(0.02, 0.012, 0.03), uNight * 0.92);
+    vec3 nightSketch = mix(paperNight, paperNight * 0.4, ink);
+    vec3 unprinted = mix(paperDay, nightSketch, uNight);
+    col = mix(unprinted, col, printed);
   }
 
   gl_FragColor = vec4(col, 1.0);

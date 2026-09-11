@@ -1275,6 +1275,71 @@ shrinking distance-proportionally rather than a fixed offset, and by X/Y
 (same formula, same matrices) being exact. Typecheck clean; pushed to
 `origin/main` and republished.
 
+### Thirty-eighth pass (2026-09-11): night gets a monochrome sketch, not flat dark; the cycle runs in 1 minute to watch it
+Myles asked directly: at night, should unlit rock show hatching with no
+colour, or nothing at all? Recommended hatching — it extends an idea the
+game already has (the daytime "pencil" under-drawing: form reads before
+ink lands) rather than inventing a new one, and reads better for actually
+navigating than a flat silhouette. Implemented in both `TOON_FRAGMENT` and
+the ceiling's `VAULT_FRAGMENT`: the unprinted/unlit fallback now darkens
+the (already night-faded) paper by the SAME real `ink` mask already
+computed for the lit case (cross-hatch coverage for rock, brush-arc stroke
+coverage for the ceiling) — the actual form and its texture are visible,
+just achromatic, until a torch brings the biome's real colour. Day is
+untouched (`uNight=0` collapses back to exactly the existing pencil/flat
+paper behavior on both materials). Verified: an unlit rock face that read
+as flat charcoal before now shows real cross-hatch strokes at close range
+— confirmed the first test spot happened to be open air/render-distance
+void (no geometry, hence no hatch to show — expected), then re-aimed at a
+confirmed nearby wall and saw the sketch clearly.
+
+Also: `dayNightCycleSec`'s default dropped from 600 to 60 (still a live
+tune-panel slider, still overridable via `?cfg=`) purely so the full day→
+dusk→night→dawn cycle plays out once a minute in Auto — Myles wanted to
+just watch it happen while playing rather than always reaching for the
+phase-lock buttons. Typecheck clean; pushed to `origin/main` and
+republished.
+
+### Thirty-ninth pass (2026-09-11): the night sketch actually shows up, and shades with the rock
+The previous pass shipped conceptually but not in fact: Myles reported
+(with screenshots, after I twice wrongly guessed "stale tab" and was
+rightly called on it — "you didn't build and ship it though, check the
+screenshots") that night showed flat, textureless dark ground, no hatching
+at all. Reproduced it myself on a verified-current server (confirmed one
+dev-server process via `lsof`/`ps aux`, confirmed the running shader
+matched disk via `material.fragmentShader`) rather than taking the report
+on faith a third time.
+
+Root cause, found by rendering the night ink mask directly as a colour
+instead of continuing to guess: the ground's real `ink` value — the one
+the night sketch was reusing — has a final unconditional override,
+`if (tone < blackCut) ink = 1.0;`, that flattens any sufficiently dark
+tone to solid ink regardless of the actual hatch pattern. That's a
+reasonable daytime printed-look choice (colour still varies there), but
+biomes with a high `blackCut` (Root Cellar, 0.35) cover large fractions of
+their surface that way even in daylight — and at night, with colour gone,
+that solid fill is *all* that showed: a flat blanket, not a sketch.
+
+First fix attempt swapped the night mask for an entirely separate, single
+direction, uniform ruled-line pattern so it could never inherit that
+solid-fill saturation. That fixed the flatness but broke something Myles
+caught immediately on the next screenshot: "you've done a blanket hatch,
+rather than hatching and shading based on rock elevation like when its in
+the day" — a uniform pattern ignores tone and the surface-following
+direction (`d1`) entirely, so it no longer read the rock's actual form the
+way daytime ink does.
+
+Final fix: capture the real ink value — tone-gated density, the same
+surface-following direction, the same stipple and cracks — *before* the
+`if (tone < blackCut) ink = 1.0;` override, and feed that into the night
+sketch instead. Night now shades and directs itself with the rock exactly
+like day does; it just never flattens to a solid block regardless of how
+dark the tone gets. Verified on both ends of the `blackCut` range: Root
+Cellar (0.35, the biome that broke first) and Crystal Vein (0.15, the
+lowest) both show density that visibly varies with the rock's shadowed
+pockets versus its flatter faces, not a uniform wash. Typecheck clean;
+pushed to `origin/main` and republished.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
