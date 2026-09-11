@@ -164,7 +164,11 @@ same as always.
   (`nightPersonalReach`, a few metres by default) — it's a big, generous
   bubble by day, and night looked like day everywhere a player stood until
   that came down. Let a planted torch run out at night and its patch goes
-  dark with it. The surface itself reads duskier as night falls (still bare
+  dark with it. An unlit patch at night fades toward near-black, not bright
+  paper — it genuinely reads as dark, not just a dimmer page; the ink-pass's
+  own silhouette/edge lines still draw over it regardless, so an unlit
+  shape still reads by its outline in the dark, until a torch reveals its
+  real colour. The surface itself reads duskier as night falls (still bare
   paper, just a darker sheet of it — no skyline). The tuning panel's Time
   phase buttons (Auto / Day / Dusk / Night) freeze the cycle at any phase so
   you can look at — and tune — exactly one of them; `nightIntensity` is a

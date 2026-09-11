@@ -416,9 +416,18 @@ void main() {
     float printed = smoothstep(0.08, 0.5, mix(max(inked, lit), lit, uNight));
     // Bare paper carries a faint pencil under-drawing of the tone so the
     // form reads before the ink lands; the sheet itself reads dimmer the
-    // deeper below the surface it is, and duskier at night (surface ground
-    // reads this same paper look before it's ever been inked).
-    vec3 paper = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3) * (1.0 - uNight * 0.4);
+    // deeper below the surface it is. At night this isn't just a dusk tint
+    // any more (a 40% dim on bright cream paper is still bright cream) --
+    // it fades toward uInk (the same near-black the void/background
+    // already uses), so an unlit patch genuinely reads as dark, not as a
+    // slightly duller page. It never fully reaches uInk (capped below 1) so
+    // the pencil under-drawing keeps a sliver of contrast even at full
+    // night -- and the ink-pass's own silhouette/crease edge lines (driven
+    // by the depth/normal buffer, unconditional on any of this) still draw
+    // on top regardless, so a dark, unlit shape still reads by its outline,
+    // same as it does once lit.
+    vec3 paperDay = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
+    vec3 paper = mix(paperDay, uInk, uNight * 0.92);
     vec3 pencil = mix(paper, paper * 0.82, step(tone, blackCut) * 0.6);
     col = mix(pencil, col, printed);
   }
@@ -758,7 +767,10 @@ void main() {
     float inked = (muv.x >= 0.0 && muv.x <= 1.0 && muv.y >= 0.0 && muv.y <= 1.0)
       ? texture2D(uInkMap, muv).r : 0.0;
     float printed = smoothstep(0.08, 0.5, mix(max(inked, lit), lit, uNight));
-    vec3 paper = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
+    // See TOON_FRAGMENT's matching block: fades toward dark at night rather
+    // than just dimming, so an unlit ceiling patch actually reads as dark.
+    vec3 paperDay = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
+    vec3 paper = mix(paperDay, vec3(0.02, 0.012, 0.03), uNight * 0.92);
     col = mix(paper, col, printed);
   }
 

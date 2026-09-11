@@ -1149,6 +1149,39 @@ hover+screenshot on `printScale` (previously blank) now shows the full
 description box. Typecheck clean; pushed to `origin/main` and republished
 (a visible UI addition).
 
+### Thirty-fourth pass (2026-09-11): night wasn't actually dark, take two — the paper fallback itself was the wrong colour
+Myles: "at night it's really easy to see still... should it not be
+reversed, so black with white outlines... and then when you place a torch
+the colour?" — exactly right, and the actual bug behind it. The previous
+night-mode pass fixed *when* an area stops being lit (thirty-first pass:
+your own passive light shrinks at night), but never questioned what an
+UNLIT area actually renders as: `TOON_FRAGMENT`'s "unprinted until lit"
+fallback is `uPaper` (bright cream, `#e8e4d0`) with a night-dusk dim of at
+most 40% — a dim cream is still a bright cream. An unlit night patch was
+never going to read as dark no matter how small `nightPersonalReach` got,
+because the thing it falls back to showing was never dark to begin with.
+
+Checked the architecture before assuming a fix was even safe: the
+silhouette/crease ink lines are drawn by the SEPARATE ink-pass post-process
+(`INK_FRAGMENT`), reading the depth/normal buffer that exists for every
+rendered surface unconditionally — completely independent of whether
+`TOON_FRAGMENT` considers that surface "printed." That's exactly the
+mechanism Myles was describing without knowing it existed: edges/outlines
+already draw regardless of lit state, so making the FILL color dark instead
+of bright paper gets "dark with visible outlines, revealed by a torch" for
+close to free.
+
+Fixed: `paper` (both `TOON_FRAGMENT` and `VAULT_FRAGMENT`'s ceiling copy)
+now fades toward near-black (`uInk` / the ceiling's own hardcoded ink
+tone) as `uNight` rises, capped at 92% so the faint pencil under-drawing
+keeps a sliver of contrast even at full night rather than going flat.
+Verified: Day is pixel-unchanged (screenshotted); Night, same exact camera
+position, now reads as a genuinely dark ground/backdrop with only crisp
+black outline edges visible at a distance, the player's own torch-lit
+figure standing out clearly against it — screenshotted both close-up (near
+a torch) and from 200m out in open unlit ground (much darker, outlines-
+only). Typecheck clean; pushed to `origin/main` and republished.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
