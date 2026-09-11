@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { applyConfig, createPipeline, renderFrame, resizePipeline, setWorldSeed, setDepth, setNight, MAX_LIGHTS, INK_BLACK, PAPER, type Torch } from "./render/pipeline";
 import { COLORWAYS } from "./render/palette";
-import { initPhysics, rayDistance, rayHit } from "./physics/world";
+import { initPhysics, rayDistance, rayHit, hasLineOfSight } from "./physics/world";
 import { Terrain, type Level } from "./world/terrain";
 import { BIOMES } from "./world/biomes";
 import { ChunkManager } from "./world/chunks";
@@ -823,6 +823,9 @@ async function boot(): Promise<void> {
     const heldRemoteIds = new Set<string>();
     if (carrying) heldRemoteIds.add(carrying);
     for (const peer of net.peers.values()) if (peer.state.g) heldRemoteIds.add(peer.state.g);
+    // Chest height, not feet — the stand-in "can I actually see that torch"
+    // point for the line-of-sight checks below.
+    const eye = { x: player.position.x, y: player.position.y + 1.2, z: player.position.z };
     for (const [id, r] of remotes) {
       const st = net.peers.get(id)?.state;
       if (!st) continue;
@@ -855,16 +858,26 @@ async function boot(): Promise<void> {
       if ((st.b ?? "") && !r.talking) sound.blip();
       r.talking = !!(st.b ?? "");
       if (r.figure.colorway !== st.i) r.figure.setColorway(st.i);
-      p.torches.push({ position: r.torch, reach: THREE.MathUtils.lerp(CFG.light.remoteReach, N.nightPersonalReach, nightAmt) });
-      p.inkMap.stamp(r.pos.x, r.pos.z, CFG.light.inkStamp * 0.7);
+      // A torch's light is a pure distance falloff with no occlusion of its
+      // own — without a real line-of-sight check, a peer's torch on the far
+      // side of solid rock (a different level, buried behind a wall) would
+      // still light your side of it, as long as you were nominally in reach.
+      // `eye` (chest height, not feet) is the viewer's own stand-in position.
+      if (hasLineOfSight(ph, r.torch, eye, player.body)) {
+        p.torches.push({ position: r.torch, reach: THREE.MathUtils.lerp(CFG.light.remoteReach, N.nightPersonalReach, nightAmt) });
+        p.inkMap.stamp(r.pos.x, r.pos.z, CFG.light.inkStamp * 0.7);
+      }
       peerPositions.set(id, r.pos);
     }
-    // Standing torches: nearest first; each prints the rock around it.
+    // Standing torches: nearest first; each prints the rock around it. Only
+    // ones with real line of sight to the player count — same reasoning as
+    // the remote-torch check above (see hasLineOfSight in physics/world.ts).
     const standing: Torch[] = [];
     for (const t of chunks.props.torches.values()) standing.push({ position: t.position, reach: t.reach });
     standing.sort((a, b) => a.position.distanceToSquared(player.position) - b.position.distanceToSquared(player.position));
     for (const t of standing) {
       if (p.torches.length >= MAX_LIGHTS) break;
+      if (!hasLineOfSight(ph, t.position, eye, player.body)) continue;
       p.torches.push(t);
       p.inkMap.stamp(t.position.x, t.position.z, TORCH_REACH * 0.8);
     }

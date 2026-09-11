@@ -1182,6 +1182,37 @@ figure standing out clearly against it — screenshotted both close-up (near
 a torch) and from 200m out in open unlit ground (much darker, outlines-
 only). Typecheck clean; pushed to `origin/main` and republished.
 
+### Thirty-fifth pass (2026-09-11): a torch could light you through solid rock
+Myles noticed a lit patch in a night screenshot with no torch anywhere in
+view, and pushed back hard on the explanation rather than accepting it:
+"if I cannot see the torch... this is like saying a torch is on the
+surface and I'm buried deep in a cave... that's nuts." Right, and worth
+fixing properly rather than filing under "known simplification" — the
+lighting model (`src/main.ts`'s torch list, sampled in `shaders.ts`) was a
+pure 3D distance falloff with no occlusion at all: any torch within
+nominal `reach` lit you, wall or no wall, level or no level, in between.
+Confirmed live rather than assumed: at a spot that looked lit with no
+visible torch, `p.torches` genuinely held 7 active lights, several 17-20m
+away — well past where they should contribute, and (per the actual
+complaint) with solid rock demonstrably between them and the player.
+
+Added `hasLineOfSight(ph, from, to, exclude)` (`src/physics/world.ts`) — a
+raycast between a torch and the viewer, reusing the exact
+"ignore dynamic bodies" predicate `PlayerController`'s own wall-climb rays
+already use (a loose rock or another player standing in the way shouldn't
+flicker the lighting; only fixed terrain and static rock should occlude).
+Wired into both torch sources in `src/main.ts`: a peer's carried torch and
+every "standing" (placed/world/shrine) torch now only make it into
+`p.torches` — and only permanently ink the map — if there's real line of
+sight from the torch to the player's own chest height, not just distance.
+The player's own carried light needs no check (you always have your own
+light, by definition). Verified at the exact spot from the screenshot:
+before, 7 torches active including two 17-20m away through rock; after,
+exactly 1 (the player's own) — screenshotted, now uniformly dark with no
+stray glow. Confirmed the positive case too: placing a real torch nearby
+(genuine line of sight, 3m away) still lights normally, no regression.
+Typecheck clean; pushed to `origin/main` and republished.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

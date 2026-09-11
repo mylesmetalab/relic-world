@@ -94,6 +94,33 @@ export function rayDistance(
   return h.timeOfImpact ?? h.toi ?? null;
 }
 
+/** True if nothing solid (terrain, or a static rock) sits between `from`
+ *  and `to` — used to decide whether a torch's light should reach a viewer
+ *  at all, since the lighting model itself is just a distance falloff with
+ *  no occlusion of its own: without this, a torch on the far side of solid
+ *  rock (a different level, the far side of a wall) would still light your
+ *  side of it, as long as you were within its nominal `reach`. Ignores
+ *  loose/dynamic props and other players — a rock you can push, or someone
+ *  standing in the way, shouldn't flicker the lighting; only fixed terrain
+ *  and static decoration do. `exclude` should be the viewer's own body. */
+export function hasLineOfSight(
+  ph: Physics, from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number },
+  exclude?: RAPIER.RigidBody,
+): boolean {
+  const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist < 1e-4) return true;
+  const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+  const notDynamic = (c: RAPIER.Collider): boolean => {
+    const body = c.parent();
+    return !body || body.bodyType() !== ph.R.RigidBodyType.Dynamic;
+  };
+  // Stop just short of `to` so a torch sitting flush against a wall, or the
+  // viewer standing right at a wall themselves, doesn't false-positive as
+  // "blocked" by geometry immediately at the destination.
+  return rayDistance(ph, from, dir, Math.max(0, dist - 0.2), exclude, notDynamic) == null;
+}
+
 /** Distance along `dir` (unit) from `origin` to the first collider a ball of
  *  `radius` would touch sweeping that way, or null. Unlike `rayDistance`
  *  (a zero-width line), this catches geometry the exact ray line clears but

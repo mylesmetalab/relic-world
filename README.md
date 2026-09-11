@@ -168,7 +168,10 @@ same as always.
   paper — it genuinely reads as dark, not just a dimmer page; the ink-pass's
   own silhouette/edge lines still draw over it regardless, so an unlit
   shape still reads by its outline in the dark, until a torch reveals its
-  real colour. The surface itself reads duskier as night falls (still bare
+  real colour — and only a torch you actually have real line of sight to
+  counts at all; one behind a wall or on a level above you no longer lights
+  your side of it just because you're nominally within its reach. The
+  surface itself reads duskier as night falls (still bare
   paper, just a darker sheet of it — no skyline). The tuning panel's Time
   phase buttons (Auto / Day / Dusk / Night) freeze the cycle at any phase so
   you can look at — and tune — exactly one of them; `nightIntensity` is a
