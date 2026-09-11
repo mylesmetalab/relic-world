@@ -825,10 +825,16 @@ async function boot(): Promise<void> {
     // visibility (up to ~46 m with relics), but that same bubble used to
     // swallow night mode entirely: it's always-on and bigger than most
     // rooms, so nothing near a player ever looked dark. At night it shrinks
-    // toward `nightPersonalReach` (a few metres) — actual darkness now
-    // depends on a placed torch, a peer's torch, or a world brazier, none of
-    // which shrink (they use their own fixed `reach`, not this one).
-    const personalReach = THREE.MathUtils.lerp(CFG.light.localReach + reachBonus, N.nightPersonalReach, nightAmt);
+    // toward `nightPersonalReach` (0 by default — no passive light at all)
+    // — actual darkness now depends on a held/placed torch, a peer's torch,
+    // or a world brazier, none of which shrink (their own fixed `reach`).
+    // The light shader's falloff treats an EXACT 0 reach as "no falloff,
+    // fully lit" (a convenience for other callers, not a real light), so a
+    // literal 0 here would make night the OPPOSITE of dark — clamp to a
+    // small epsilon that's visually indistinguishable from off but never
+    // trips that special case.
+    const glowReach = Math.max(0.05, N.nightPersonalReach);
+    const personalReach = THREE.MathUtils.lerp(CFG.light.localReach + reachBonus, glowReach, nightAmt);
     p.torches.push({ position: torchPos, reach: personalReach });
     // A held torch (H) is a real light like any placed one: fixed reach,
     // untouched by the night shrink above.
@@ -886,7 +892,7 @@ async function boot(): Promise<void> {
       // still light your side of it, as long as you were nominally in reach.
       // `eye` (chest height, not feet) is the viewer's own stand-in position.
       if (hasLineOfSight(ph, r.torch, eye, player.body)) {
-        p.torches.push({ position: r.torch, reach: THREE.MathUtils.lerp(CFG.light.remoteReach, N.nightPersonalReach, nightAmt) });
+        p.torches.push({ position: r.torch, reach: THREE.MathUtils.lerp(CFG.light.remoteReach, glowReach, nightAmt) });
         p.inkMap.stamp(r.pos.x, r.pos.z, CFG.light.inkStamp * 0.7);
       }
       peerPositions.set(id, r.pos);

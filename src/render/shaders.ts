@@ -432,15 +432,16 @@ void main() {
     // deeper below the surface it is. At night this isn't just a dusk tint
     // any more (a 40% dim on bright cream paper is still bright cream) --
     // it fades toward uInk (the same near-black the void/background
-    // already uses), so an unlit patch genuinely reads as dark, not as a
-    // slightly duller page. It never fully reaches uInk (capped below 1) so
-    // the pencil under-drawing keeps a sliver of contrast even at full
-    // night -- and the ink-pass's own silhouette/crease edge lines (driven
-    // by the depth/normal buffer, unconditional on any of this) still draw
-    // on top regardless, so a dark, unlit shape still reads by its outline,
-    // same as it does once lit.
+    // already uses). A first pass capped this short of fully reaching uInk,
+    // to keep a sliver of contrast at full night -- Myles explicitly wants
+    // it genuinely pitch black instead (Minecraft's "no light source, the
+    // screen is black" model), so at uNight=1 this now lands exactly on
+    // uInk: no visible rock at all without light actually reaching it. The
+    // ink-pass's own silhouette/crease edge lines (driven by the
+    // depth/normal buffer, unconditional on any of this) still draw on top
+    // regardless, so a shape still reads by its outline even here.
     vec3 paperDay = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
-    vec3 paper = mix(paperDay, uInk, uNight * 0.92);
+    vec3 paper = mix(paperDay, uInk, uNight);
     vec3 pencil = mix(paper, paper * 0.82, step(tone, blackCut) * 0.6);
     // At night, unprinted doesn't just mean flat and dark — it means a
     // monochrome SKETCH: the same real cross-hatch coverage (ink, already
@@ -641,7 +642,11 @@ void main() {
   float l = luma(c);
   float shadowAmt = clamp(1.0 - l * 1.6, 0.0, 1.0);
   float dots = halftoneDots(pp, uHalftoneAngle, uHalftoneScale, shadowAmt * uHalftone) * hasGeo;
-  c *= mix(1.0, 0.88, dots);
+  // A real riso dot reads as solid ink, not a light tint — 0.88 (a bare 12%
+  // dim at full dot coverage) was so weak it was indistinguishable from
+  // noise against the existing hatch/grain, confirmed by sampling pixels
+  // with the slider at 0 vs 1 side by side and finding no visible pattern.
+  c *= mix(1.0, 0.32, dots);
 
   // Paper tooth (multiplicative) and specks of bare paper: a property of
   // the SHEET the rock is printed on, so it has to be keyed by where that
@@ -824,9 +829,11 @@ void main() {
     // than just dimming, so an unlit ceiling patch actually reads as dark —
     // and, same as there, shows a monochrome sketch of the real brush-arc
     // strokes (the same ink mask above) rather than going flat, so the
-    // form and its texture read before a torch brings the colour.
+    // form and its texture read before a torch brings the colour. Lands
+    // fully on the dark colour at uNight=1 (not capped short of it) to
+    // match Myles's "genuinely pitch black, not just dim" ask.
     vec3 paperDay = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
-    vec3 paperNight = mix(paperDay, vec3(0.02, 0.012, 0.03), uNight * 0.92);
+    vec3 paperNight = mix(paperDay, vec3(0.02, 0.012, 0.03), uNight);
     vec3 nightSketch = mix(paperNight, paperNight * 0.4, ink);
     vec3 unprinted = mix(paperDay, nightSketch, uNight);
     col = mix(unprinted, col, printed);

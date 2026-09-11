@@ -72,7 +72,15 @@ export type Tunables = {
      *  personal light bubble was bigger than most rooms. Placed torches,
      *  vault pillars and world braziers are untouched by this (their own
      *  `reach` field, not `light.localReach`) — they're the reliable light
-     *  the whole point of night mode is to make you depend on. */
+     *  the whole point of night mode is to make you depend on. Default 0:
+     *  Myles's call once the held torch (H) existed as a real alternative —
+     *  no passive light at all, so night is genuinely black unless a torch
+     *  (held, placed, or a shrine/brazier) is actually reaching you. Slide
+     *  it up for a softer, Minecraft-moonlight-ish always-on floor instead.
+     *  (`main.ts` clamps the value actually used to a small epsilon above
+     *  0 — the light shader's falloff treats an exact 0 reach as "no
+     *  falloff, fully lit," the opposite of what a slider all the way down
+     *  should mean.) */
     nightPersonalReach: number;
     /** Reach of the equippable HELD torch (H), while it's out. Fixed, like
      *  a placed torch's own `reach` (`TORCH_REACH`) — it doesn't shrink at
@@ -210,7 +218,7 @@ export type Tunables = {
 
 export const DEFAULTS: Tunables = {
   world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, climbSolidity: 0.85, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4, crust: 6, vaultRadius: 2.4, vaultRing: 1.0, vaultTorchRange: 3, propUpperDensity: 0.4, torchLifeSec: 180, presenceEnabled: 1, biomeHopRadius: 400 },
-  night: { timePhase: "auto", dayNightCycleSec: 60, nightIntensity: 1, nightPersonalReach: 5, heldTorchReach: 16 },
+  night: { timePhase: "auto", dayNightCycleSec: 60, nightIntensity: 1, nightPersonalReach: 0, heldTorchReach: 16 },
   light: { localReach: 34, remoteReach: 22, inkStamp: 26, fogNear: 14, fogFar: 70, fog: 0.5, fogTone: 0.4, mottle: 0.3, shadowGamma: 1.25, ceilCell: 26, ceilArcSpacing: 1.6 },
   press: { printScale: 0.6, misreg: 0.6, edgeW: 1.0, depthCut: 0.012, normalCut: 0.5, grain: 0.9, speck: 0.004, halftone: 0, halftoneScale: 4, halftoneAngle: 20, depthStrange: 1, shadowLift: 0 },
   dig: { radius: 1.2, depth: 0.3, tunnelRadius: 1.2, rate: 5, reach: 4.5, stepUp: 1.3 },

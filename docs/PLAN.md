@@ -1378,6 +1378,55 @@ per-frame torch list; the night section's sliders and phase buttons still
 work after the config move. Typecheck clean; pushed to `origin/main` and
 republished.
 
+### Forty-first pass (2026-09-11): night defaults to genuinely pitch black; a real halftone bug found along the way
+Myles, after trying the held torch: "should it not be totally pitch black
+like minecraft unless my torch is on or theres a static torch nearby?" —
+then, when I raised the "no failsafe visibility" tradeoff: "we dont need
+the ambient character bubble light, or at least make it an on/off in the
+settings," then "or use make it a slide" (a slider, not a separate toggle
+control — `nightPersonalReach` already is one).
+
+`DEFAULTS.night.nightPersonalReach` dropped from 5 to 0, and the tune
+panel's range floor moved from 1 down to 0 to match. That alone would have
+been backwards, though: `TOON_FRAGMENT`'s light loop treats an EXACT 0
+reach as "no falloff, fully lit" (`reach > 0.0 ? ... : 1.0`) — a
+convenience for other callers (padding, "this slot has no real light"),
+not a real "off." Sliding the reach to 0 would have made night the
+OPPOSITE of dark. Fixed by clamping the value actually fed to the light
+list to a small epsilon (0.05) in `main.ts`, for both the local player and
+remote peers' passive glow — never the literal 0 the shader special-cases.
+
+Separately, at uNight=1 the unlit "paper" colour was capped at a 92% mix
+toward ink (`uNight * 0.92`), a deliberate choice from the pass that added
+the night sketch, to keep a sliver of contrast. With the passive glow now
+off by default, that 8% floor was exactly what Myles was seeing when he
+said "i can still see the grey rock." Changed both `TOON_FRAGMENT` and
+`VAULT_FRAGMENT` to mix all the way to 1.0 — an unlit patch is now
+genuinely uInk, not "very dark." This also incidentally resolved his other
+observation in the same message ("the hatching on the night time is wrong
+its still just a blanket hatch") — a fully unlit area has `tone` collapsed
+to ~0 everywhere (tone is a LIGHTING quantity; with nothing lighting it,
+there's no gradient left to shape a hatch pattern by, so uniform hatch
+there is actually correct, not a bug) — and now that the paper itself goes
+to true black in that case, the flat hatch is invisible anyway, which
+reads right.
+
+Along the way, Myles separately flagged "halftone impacts nothing." Traced
+it to a real, distinct bug: `halftoneDots()` in the press pass computes a
+legitimate spatial dot mask, but the result only ever darkened colour by
+`mix(1.0, 0.88, dots)` — a 12% dim at full dot coverage, invisible against
+the existing hatch linework and grain. Verified empirically: sampling a
+frozen (photo-mode) frame pixel-by-pixel at `halftone=0` vs `=1` showed
+IDENTICAL values — a real bug, not just subtlety (the first attempt to
+confirm this gave a false negative because it mutated `CFG.press.halftone`
+directly from the console rather than through the tune panel's actual
+slider `input` event, which is what triggers `applyConfig` and pushes the
+value into the uniform — a lesson for testing this panel's values in
+general). Strengthened to `mix(1.0, 0.32, dots)`; re-verified via the same
+frozen-frame pixel sampling, this time driving the real DOM slider, and
+confirmed a clearly visible dot texture appears in shadowed areas.
+Typecheck clean; pushed to `origin/main` and republished.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

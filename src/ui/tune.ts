@@ -16,7 +16,7 @@ type Range = [number, number, number]; // min, max, step
 
 const RANGES: Record<keyof Tunables, Record<string, Range>> = {
   world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], climbSolidity: [0.3, 0.98, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1], crust: [1, 24, 0.5], vaultRadius: [1.2, 5, 0.1], vaultRing: [0.4, 2.5, 0.1], vaultTorchRange: [1, 8, 0.5], propUpperDensity: [0, 1, 0.05], torchLifeSec: [10, 600, 5], presenceEnabled: [0, 1, 1], biomeHopRadius: [50, 1000, 10] },
-  night: { dayNightCycleSec: [60, 3600, 30], nightIntensity: [0, 1, 0.05], nightPersonalReach: [1, 20, 0.5], heldTorchReach: [4, 40, 1] },
+  night: { dayNightCycleSec: [60, 3600, 30], nightIntensity: [0, 1, 0.05], nightPersonalReach: [0, 20, 0.5], heldTorchReach: [4, 40, 1] },
   light: { localReach: [8, 80, 1], remoteReach: [4, 60, 1], inkStamp: [4, 60, 1], fogNear: [2, 80, 1], fogFar: [10, 200, 1], fog: [0, 1, 0.01], fogTone: [0, 1, 0.01], mottle: [0, 1, 0.01], shadowGamma: [0.4, 3, 0.05], ceilCell: [6, 80, 1], ceilArcSpacing: [0.4, 6, 0.1] },
   press: { printScale: [0.2, 1, 0.05], misreg: [0, 3, 0.1], edgeW: [0.5, 3, 0.1], depthCut: [0.002, 0.05, 0.001], normalCut: [0.1, 1, 0.01], grain: [0, 1, 0.01], speck: [0, 0.02, 0.0005], halftone: [0, 1, 0.01], halftoneScale: [2, 24, 0.5], halftoneAngle: [0, 90, 1], depthStrange: [0, 2, 0.05], shadowLift: [0, 1, 0.05] },
   dig: { radius: [0.6, 5, 0.1], depth: [0.1, 4, 0.05], tunnelRadius: [0.8, 6, 0.1], rate: [1, 20, 1], reach: [2, 12, 0.5], stepUp: [0.8, 2.2, 0.1] },
@@ -70,7 +70,7 @@ const DESCRIPTIONS: Record<keyof Tunables, Record<string, string>> = {
   night: {
     dayNightCycleSec: "How long a full day→night→day cycle takes, in seconds, in Auto phase. Ignored when a phase is locked (Day/Dusk/Night above).",
     nightIntensity: "Safety valve for the whole night-darkening effect: 0 disables it completely (looks like day at any phase); 1 is the full tuned strength.",
-    nightPersonalReach: "How far YOUR own passive carried light reaches at full night (1.0 phase) — day's much bigger reach (see light.localReach) shrinks toward this as night falls. Small values make night feel genuinely dark; large values make night barely different from day.",
+    nightPersonalReach: "How far YOUR own passive carried light reaches at full night (1.0 phase) — day's much bigger reach (see light.localReach) shrinks toward this as night falls. 0 (the default) means no passive light at night at all — pitch black unless a held/placed torch or shrine actually reaches you. Larger values bring back a soft always-on floor, up to barely-different-from-day at the top end.",
     heldTorchReach: "How far the equippable held torch (H) reaches — fixed, day or night, like a placed torch. On top of nightPersonalReach: this is the deliberate light you get FROM choosing to hold a torch, not the passive glow you always have anyway.",
   },
   light: {

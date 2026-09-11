@@ -154,22 +154,24 @@ same as always.
   fast-thrown prop, or another player thrown/flung at speed, passes close by
   — an ordinary push or a normal walk-up stays quiet (`impactPropSpeed`,
   `impactPlayerSpeed`, `impactRadius` in the panel set the cutoffs).
-- **Night takes your ink back.** A day/night cycle (`dayNightCycleSec`, a
-  minute by default so you can watch it happen — tune it up for something
-  slower) runs everywhere, shared world included. By day,
-  "unprinted until lit" works as always — once inked, always printed. At
-  night that permanence stops applying: a place you explored earlier goes
-  dark again the moment nothing is actually lighting it right now, unless a
-  torch — yours, a peer's, or a permanent shrine/brazier — is still standing
-  and burning there. Your own carried light shrinks a lot at night too
-  (`nightPersonalReach`, a few metres by default) — it's a big, generous
-  bubble by day, and night looked like day everywhere a player stood until
-  that came down. Let a planted torch run out at night and its patch goes
-  dark with it. An unlit patch at night fades toward near-black, not bright
-  paper, and shows a monochrome sketch of its real hatching or brush-arc
-  strokes rather than going flat — the form and its texture read in the
-  dark, same as the daytime pencil under-drawing, just without colour until
-  a torch reveals it — and only a torch you actually have real line of sight to
+- **Night takes your ink back — and by default, night is really dark.** A
+  day/night cycle (`dayNightCycleSec`, a minute by default so you can watch
+  it happen — tune it up for something slower) runs everywhere, shared
+  world included. By day, "unprinted until lit" works as always — once
+  inked, always printed. At night that permanence stops applying: a place
+  you explored earlier goes dark again the moment nothing is actually
+  lighting it right now, unless a torch — yours, a peer's, or a permanent
+  shrine/brazier — is still standing and burning there. Your character
+  gives off no passive light at night by default (`nightPersonalReach: 0`)
+  — an unlit patch fades all the way to true black, Minecraft-style: no
+  torch reaching you, nothing to see. (Slide `nightPersonalReach` up in the
+  panel for a softer always-on floor instead, if you want one.) Let a
+  planted torch run out at night and its patch goes dark with it. Wherever
+  a torch DOES reach, an unlit-but-inked patch shows a monochrome sketch of
+  its real hatching or brush-arc strokes rather than going instantly flat —
+  the form and its texture read in the half-lit fringe, same as the
+  daytime pencil under-drawing, just without colour until a torch fully
+  reveals it — and only a torch you actually have real line of sight to
   counts at all; one behind a wall or on a level above you no longer lights
   your side of it just because you're nominally within its reach. The
   surface itself reads duskier as night falls (still bare
@@ -181,14 +183,12 @@ same as always.
   instead of buried in `world`. `nightIntensity` is a safety valve that
   fully disables the darkening at 0. The paper map (Tab) is untouched either
   way — it always shows your full inked history.
-- **H holds a real torch.** Your character always gives off a small passive
-  glow (`nightPersonalReach`) just by existing — otherwise night would be
-  unplayable pitch black before you could even see to plant one. **H**
-  equips an actual torch in hand: a fixed, deliberate reach
-  (`heldTorchReach`) that doesn't shrink at night the way the passive glow
-  does, the same as a planted one (X) or a standing one already does.
-  Equipping it is a real choice that changes how far you can see, not a
-  bigger version of the ambient bubble you always have anyway.
+- **H holds a real torch.** With no passive glow at night by default, a
+  torch is the only way to see. **H** equips one in hand: a fixed,
+  deliberate reach (`heldTorchReach`) that doesn't shrink at night, the
+  same as a planted one (X) or a standing one already doesn't. Equipping
+  it is a real, visible choice, not a bigger version of an ambient bubble
+  you'd otherwise always have.
 
 ## How it's built
 
