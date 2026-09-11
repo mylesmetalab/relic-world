@@ -478,6 +478,7 @@ async function boot(): Promise<void> {
   const remotePrev = new THREE.Vector3();
   const marchPt = new THREE.Vector3();
   const paperColor = new THREE.Color(PAPER);
+  const nightInk = new THREE.Color(INK_BLACK);
   const nightBg = new THREE.Color();
   const peerPositions = new Map<string, { x: number; y: number; z: number }>();
   let acc = 0;
@@ -919,7 +920,14 @@ async function boot(): Promise<void> {
     // bare-paper look (shaders.ts) — still flat bare paper, just a darker
     // sheet of it; no skyline, no gradient.
     const onSurface = player.position.y > terrain.surface(player.position.x, player.position.z) - 6;
-    if (onSurface) (p.scene.background as THREE.Color).copy(nightBg.copy(paperColor).multiplyScalar(1 - nightAmt * 0.4));
+    // Same bug as the rock's own "unprinted" fallback, same fix: a straight
+    // dim (at most 40%) of bright paper is still bright paper, never
+    // actually dark. Fades toward ink-black instead — all the way (not
+    // capped at 92% like the rock's paper) so the sky reads strictly
+    // darker than nearby ground at night, not the same flat tone as
+    // whatever's around you; the sky has no pencil under-drawing to
+    // preserve a sliver of contrast for, unlike the rock.
+    if (onSurface) (p.scene.background as THREE.Color).copy(nightBg.copy(paperColor).lerp(nightInk, nightAmt));
     else (p.scene.background as THREE.Color).setHex(INK_BLACK);
     // Deeper is stranger: 0 at/above the surface, 1 by ~40 m below it.
     const depthBelow = terrain.surface(player.position.x, player.position.z) - player.position.y;

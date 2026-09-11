@@ -1213,6 +1213,27 @@ stray glow. Confirmed the positive case too: placing a real torch nearby
 (genuine line of sight, 3m away) still lights normally, no regression.
 Typecheck clean; pushed to `origin/main` and republished.
 
+### Thirty-sixth pass (2026-09-11): the sky itself never got the memo
+Myles, looking at a night surface screenshot: "shouldn't the sky be black
+at night?" It should, and it wasn't — the exact same bug as the thirty-
+fourth pass's rock fix, in a second, separate place I hadn't touched. The
+surface sky is `scene.background` set directly in `main.ts`, not part of
+`TOON_FRAGMENT`'s paper fallback at all — a completely different code
+path, so fixing the rock's paper never touched it. It was still `paperColor
+* (1 - nightAmt * 0.4)`: a straight dim of bright cream, at most 40%, so
+the sky stayed a light gray at full night instead of ever going dark.
+
+Fixed the same way as the rock: fades toward `INK_BLACK` (the same colour
+the underground background already uses) as night rises. Myles then asked
+for the sky to read darker than the ground, not the same flat tone — fair,
+since the rock's paper is deliberately capped at 92% (to keep the pencil
+under-drawing's sliver of contrast) while the sky has no such under-drawing
+to preserve, so it fades all the way to pure ink at full night, not capped.
+Verified on a fresh surface spot at night: previously a light tan/gray sky,
+now near-black and visibly darker than the surrounding ground — screenshotted.
+Typecheck clean; pushed to `origin/main`
+and republished.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
