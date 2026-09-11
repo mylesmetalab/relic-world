@@ -895,6 +895,208 @@ for real) all the way to 0.94 m from A never triggered it either.
 
 ---
 
+## 20. Night mode: a day/night cycle where torches are required
+
+**Goal:** decided directly with Myles (2026-09-10/11), not guessed at. A
+real day/night cycle, in the shared world too (not gated to private
+worlds). During the day, everything looks and behaves exactly as it does
+today. During the night, the existing "unprinted until lit, stays printed
+forever" rule (README, `src/render/shaders.ts`'s "Unprinted until lit"
+block) stops applying its *permanent* half at render time: a place you
+explored earlier goes dark again once you leave it, UNLESS a torch is
+actually still standing there — placed torches (yours, a peer's) and
+permanent world/shrine torches keep their own patch lit for as long as
+they burn, Minecraft-base-style. The persistent ink-map DATA itself is
+untouched (see below) — this is a rendering-time change, not a data-model
+change. Myles also explicitly asked for hands-on control: buttons/config
+to freeze the cycle at a specific phase and tweak numbers while looking at
+exactly that phase, then paste the tuned values back — see "Phase lock and
+tuning" below, that's not optional polish, it's part of the ask.
+
+**How the existing pieces already fit this, so it's smaller than it
+sounds:**
+- `src/render/shaders.ts`'s toon fragment shader already computes exactly
+  the two signals needed: `inked` (read from the permanent `uInkMap`
+  texture — "has this ever been lit") and `lit` (this frame's real-time
+  distance falloff against the current `p.torches` list — "is a light
+  actually reaching this spot right now"). Today: `float printed =
+  smoothstep(0.08, 0.5, max(inked, lit));` — permanent OR current, so once
+  inked it's always `printed`. Night mode's core change is threading a new
+  `uNight` 0..1 uniform through so this becomes something like `printed =
+  smoothstep(0.08, 0.5, mix(max(inked, lit), lit, uNight));` — at `uNight =
+  0` (full day) this is byte-for-byte today's behavior; at `uNight = 1`
+  only the CURRENT frame's `lit` counts, so a place goes dark the moment
+  nothing is currently lighting it. This appears in more than one shader
+  copy (check every fragment shader in `shaders.ts` that has this exact
+  block, the same way `uDepth` already had to be threaded through more
+  than one).
+- The permanent `uInkMap` texture / `InkMap` class (`src/world/inkmap.ts`)
+  is NOT reset, cleared, or changed by this brief — it keeps accumulating
+  exactly as today (every torch still calls `p.inkMap.stamp(...)` each
+  frame in `src/main.ts`, unchanged). It's still the source of truth for
+  the paper map (Tab) and for daytime rendering. Night mode only changes
+  whether the fragment shader is ALLOWED to use it as a lighting shortcut
+  at render time. Do NOT touch the paper map or `inkMap.stamp` call sites.
+- "Torches remain in place so it's always lit" needs no new code at all —
+  a placed or world/shrine torch that still exists is already in
+  `chunks.props.torches` and gets pushed into `p.torches` every frame in
+  `src/main.ts` regardless of day or night, and `lit` (the real-time signal
+  night mode falls back to) already reacts to anything in `p.torches`. A
+  torch that's still burning keeps its patch genuinely lit at night for
+  free; one that's burned out (brief 16, already shipped) stops — exactly
+  the intended loop (keep your torches fed, or the dark comes back).
+- `src/render/pipeline.ts` already has the exact wiring pattern to copy for
+  a new global per-frame uniform: `uDepth` is set on `[p.rockMat, p.ceilMat,
+  ...p.figureMats]` plus the ink pass each frame from one `setDepth`-style
+  function, called unconditionally every frame from `main.ts` (not gated
+  behind `applyConfig`/a slider-change event) — do the same for a new
+  `setNight(p, amt)`, since `uNight` is inherently dynamic (changes every
+  frame from the clock or the phase lock below), not a "changes only when a
+  slider moves" value.
+- `Pipeline.time` (`p.time`, already accumulated every frame for `uTime`) is
+  a ready-made elapsed-session-seconds clock — derive the cycle phase from
+  `p.time % cycleSec` in "auto" mode rather than adding a second timer.
+  Smooth the day→night→day transition (no hard cut) — a cosine or
+  smoothstep-based curve over the cycle is fine; exact shape is a feel
+  decision, tune by playing it (and by using the phase lock below).
+- **Read `docs/PLAN.md`'s "Twenty-eighth pass" entry before touching
+  `src/render/pipeline.ts`'s `renderFrame()`**: a real bug was just found
+  and fixed there (the ND-hidden restore step used to force every
+  `p.ndHidden` object back to a hardcoded `visible = true`, clobbering
+  objects with their own independent show/hide logic — now it restores
+  each object's own remembered pre-hide visibility instead). Night mode
+  doesn't need to touch that function, just be aware of it if anything here
+  ends up added to `p.ndHidden`.
+
+**Phase lock and tuning (Myles's explicit ask — build this, not just the
+cycle):**
+- `CFG.world.timePhase: "auto" | "day" | "dusk" | "night"` (a discrete
+  mode, not a numeric slider — follow the exact precedent already in
+  `src/ui/tune.ts` for the mouse/trackpad control-scheme selector: a
+  small custom control in the tune panel, not the generic per-key slider
+  loop). `"auto"` uses the real cycle timer; `"day"`/`"dusk"`/`"night"`
+  freeze `uNight` at a fixed value (0 / 0.5 / 1) every frame regardless of
+  `p.time`, so Myles can stare at exactly one phase and tune numbers
+  against it without waiting for the cycle. Expose this as actual buttons
+  in the tune panel (Auto / Day / Dusk / Night), per his literal request
+  for "buttons... where I can set it to the different cycles," not a
+  dropdown.
+- Every other night-related number — `world.dayNightCycleSec`,
+  `world.nightIntensity` (see below), any dusk-paper-dimming constant you
+  make tunable — goes in `CFG` the normal way (`src/world/config.ts` +  a
+  slider range in `src/ui/tune.ts`'s per-section ranges object) purely
+  because that's the house rule for every tunable — but it also means it
+  rides the EXISTING Export/Copy-link mechanism for free: `src/ui/tune.ts`
+  already serializes the whole `CFG` object (`config: CFG` in its export
+  payload) and `?cfg=` already round-trips it on load — verify this before
+  assuming you need to build new export plumbing; you almost certainly
+  don't. Confirm by actually exporting after changing a new night tunable
+  and checking it's present in the JSON.
+- `world.nightIntensity` (0..1, default 1) is a safety valve: at 0 it fully
+  disables the darkening (day-like regardless of phase) via `?cfg=`
+  without a redeploy, in case the shared-world default turns out too harsh.
+
+**New pieces actually needed beyond the phase-lock/tuning above:**
+- `world.dayNightCycleSec` (total cycle length in "auto" mode — start
+  around 600s / 10 min full cycle and tune by feel, Minecraft's day is
+  ~20 min for reference).
+- **Surface goes dusk-toned too** (Myles's explicit call — NOT full black,
+  just darker paper, and the "no skyline" rule stays: this is a paper-tone
+  change, not a rendered sky). The bare-paper "unprinted" look already
+  dims with depth in a few places (`vec3 paper = uPaper * (1.0 -
+  clamp(depthAmt, 0.0, 1.0) * 0.3);` in `shaders.ts`) — extend the same
+  line to also fold in `uNight` (e.g. an extra `* (1.0 - uNight * 0.4)` or
+  similar), so the exposed ground/rock at the surface (which uses this same
+  paper look before it's inked) reads duskier as night falls. This is a
+  small, additive change to an existing line, not new rendering.
+- **A handful of new PERMANENT shrine-style torches, sparser and visually
+  distinct from a placed torch or a vault pillar** — "so you can sort of
+  see some things" even alone, at night, without your own torch. Extend
+  `Props` (mirror how vault pillar torches are already spawned via
+  `addTorch(id, x, y, z, false)` — `placed: false` already makes a torch
+  immune to brief 16's burnout, so this is free) with a new, wider-spaced
+  scatter (mirror the vault/boulder sparse-grid pattern in `terrain.ts`) of
+  a visually distinct fixture — a taller/bulkier brazier or cairn shape
+  (a new small geometry builder alongside `torchMesh()`), with a bigger
+  fixed `reach` than a hand torch, so it reads unmistakably as "a landmark,
+  not something a player put there."
+
+**Scope discipline:** this is one of the largest briefs in the backlog —
+touching the shader in more than one place, a new global per-frame uniform,
+a new timer, a new tune-panel control, and new world content. It's fine to
+land a smaller, solid cut if a specific piece proves risky (e.g. a hard
+day/night cut instead of a smooth transition, or a simpler brazier that
+reuses the existing torch shape at a bigger scale instead of a new
+geometry) — say so clearly. Two failed attempts on any one sub-problem
+means stop and report, same as every other brief.
+
+Files: `src/render/shaders.ts` (`uNight` uniform + the `printed`/paper
+formula, in every fragment shader copy that has it), `src/render/
+pipeline.ts` (`setNight`, uniform declarations on the relevant materials),
+`src/main.ts` (compute `uNight` from `p.time` or the phase lock each frame,
+call `setNight`), `src/world/config.ts` + `src/ui/tune.ts`
+(`dayNightCycleSec`, `nightIntensity`, the `timePhase` buttons),
+`src/world/props.ts` + `src/world/terrain.ts` (the new sparse
+permanent-brazier scatter).
+
+Verify: `?seed=7`. Confirm day-phase rendering is pixel-for-pixel
+unchanged from before this brief (screenshot comparison at `uNight≈0`,
+via the Day phase-lock button — cleaner than fast-forwarding a timer).
+Lock to Night and confirm a previously-explored, currently-unlit spot goes
+dark, while a spot near a still-burning placed or permanent torch stays
+lit — screenshot both. Let a placed torch burn out (brief 16) while
+locked to Night and confirm its patch goes dark once it does. Confirm the
+surface reads visibly duskier locked to Night vs Day (screenshot both).
+Confirm the paper map (Tab) is unaffected — still shows full history
+regardless of phase. Confirm `nightIntensity: 0` via `?cfg=` fully
+disables the darkening (day-like regardless of phase). Confirm Export
+JSON / Copy-link actually includes the new night tunables after changing
+them from their defaults.
+
+## 21. A way to hop between biomes
+
+**Goal:** Myles wants a button or hotkey that jumps him to a different
+biome, so biome variety (brief 15) is actually easy to tour and compare —
+right now finding a specific biome means wandering until the noise field
+happens to change. Biomes are a spatial field (`terrain.biome(x,z)` /
+`biomeAt` in `src/world/biomes.ts`), not a per-player toggle, so "switch my
+biome" means finding the nearest point that's actually IN a different
+biome and teleporting there (`player.teleport`, the same method `T`/the
+physics-escape rescue already use) — not overriding the noise field under
+the player, which would look inconsistent with the terrain already built
+around them.
+
+- A hotkey (an unused one — check `README.md`'s key table for what's
+  taken; `B` is free and mnemonic) that searches outward from the player's
+  current position (a spiral or growing-radius sample of `terrain.biomeId
+  (x,z)`) for the nearest point whose biome id differs from the current
+  one — ideally cycling forward through `BIOMES` in index order each press
+  (so repeated presses tour all 10 in sequence) rather than always landing
+  on the same neighbour — then `player.teleport()`s there, landing on
+  `terrain.levelAt(2, x, z)` (or whatever level is under the player
+  already) the same way `spawnRelicAt`'s recent fix seats things on the
+  player's actual level, not always the lower cave.
+- Also add it as an actual button in the tune panel (Myles asked for
+  "button... or hotkey" — do both, it's cheap and the tune panel already
+  has a precedent for one-off action buttons like Export/Import/Copy
+  link).
+- Keep the search bounded (a max radius / max ring count) so it can't hang
+  looking for a biome that doesn't exist within a reasonable distance in
+  this seed — fall back to doing nothing (with a HUD/chat message) rather
+  than an unbounded search.
+
+Files: `src/main.ts` (the hotkey handler + biome-hop logic), `src/ui/
+tune.ts` (the button), `src/world/terrain.ts`/`src/world/biomes.ts` (reuse
+`biomeId`/`BIOMES`, no changes needed there unless something's missing).
+
+Verify: `?seed=7`, press the hotkey repeatedly and confirm `terrain.biome
+(player.position.x, player.position.z).name` changes each time (ideally
+touring multiple distinct biomes across a few presses, not bouncing
+between the same two), screenshot at least two different biomes reached
+this way. Confirm the button in the tune panel does the same thing.
+
+---
+
 ## How to work here
 
 - Repo `~/Sites/relic-world`, public `mylesmetalab/relic-world`. Push to
