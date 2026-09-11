@@ -3,6 +3,7 @@ import { applyConfig, createPipeline, renderFrame, resizePipeline, setWorldSeed,
 import { COLORWAYS } from "./render/palette";
 import { initPhysics, rayDistance, rayHit } from "./physics/world";
 import { Terrain, type Level } from "./world/terrain";
+import { BIOMES } from "./world/biomes";
 import { ChunkManager } from "./world/chunks";
 import { CFG, configFromUrl, loadConfig, resolveQuality, QUALITY_PRESETS } from "./world/config";
 import { msUntilRoll, sharedSeed } from "./world/settings";
@@ -379,6 +380,38 @@ async function boot(): Promise<void> {
     const level = terrain.levelOf(player.position.x, player.position.z, player.position.y);
     chunks.props.spawnRelicAt(x, z, level);
   };
+  // ── Hop between biomes (B / tune panel button) ──────────────────────
+  // Biomes are a spatial noise field, not a per-player toggle, so "switch
+  // biome" means finding the nearest point that's actually IN a different
+  // biome and teleporting there — cycling forward through BIOMES in index
+  // order each press so repeated presses tour all of them in sequence,
+  // rather than always landing on the same nearest neighbour.
+  const findBiomePoint = (cx: number, cz: number, targetId: number, maxRadius: number): { x: number; z: number } | null => {
+    const ringStep = 5;
+    for (let r = ringStep; r <= maxRadius; r += ringStep) {
+      const samples = Math.max(8, Math.round((2 * Math.PI * r) / ringStep));
+      for (let i = 0; i < samples; i++) {
+        const a = (i / samples) * Math.PI * 2;
+        const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+        if (terrain.biomeId(x, z) === targetId) return { x, z };
+      }
+    }
+    return null;
+  };
+  const hopBiome = () => {
+    const startId = terrain.biomeId(player.position.x, player.position.z);
+    const maxRadius = CFG.world.biomeHopRadius;
+    for (let step = 1; step < BIOMES.length; step++) {
+      const targetId = (startId + step) % BIOMES.length;
+      const hit = findBiomePoint(player.position.x, player.position.z, targetId, maxRadius);
+      if (!hit) continue;
+      const level = terrain.levelOf(player.position.x, player.position.z, player.position.y);
+      player.teleport(new THREE.Vector3(hit.x, terrain.levelAt(level, hit.x, hit.z) + 0.5, hit.z));
+      chat.toast(`hopped to ${BIOMES[targetId]!.name}`);
+      return;
+    }
+    chat.toast("no other biome found nearby");
+  };
   const tune = new Tune({
     onRender: () => applyConfig(p),
     onRebuild: () => {
@@ -388,6 +421,7 @@ async function boot(): Promise<void> {
       player.teleport(new THREE.Vector3(player.position.x, terrain.levelAt(lv, player.position.x, player.position.z) + 0.5, player.position.z));
     },
     onSpawnRelic: spawnRelic,
+    onHopBiome: hopBiome,
   }, input);
 
   // Drop an .stl on the window to wear it (local; peers see your last character).
@@ -569,6 +603,7 @@ async function boot(): Promise<void> {
       }
       if (input.once("KeyT")) player.teleport(terrain.spawnPoint());
       if (input.once("KeyG")) spawnRelic();
+      if (input.once("KeyB")) hopBiome();
       const pressedF = input.once("KeyF");
       if (pressedF && carrying) {
         // Set them down gently.
@@ -894,7 +929,7 @@ async function boot(): Promise<void> {
     seed, shared, player, cam, terrain, chunks, pipeline: p, figure, net, remotes, photo, sound, isOwner, grab, tune, map, voice, input, cfg: CFG,
     presence, isPresenceOwner,
     quality, qualityPreset,
-    pump, applyDig, digAtAim, spawnRelic,
+    pump, applyDig, digAtAim, spawnRelic, hopBiome,
     grabPlayer: (id: string) => { carrying = id; net.sendGrabPlayer(id); },
     throwPlayer: (v: [number, number, number]) => { if (carrying) { net.sendThrowPlayer(carrying, v); carrying = null; } },
     carried: () => carriedBy,

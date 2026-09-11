@@ -911,6 +911,43 @@ Screenshotted a real grab→throw→settle sequence at Myles's own seed
 (2866): clean, no stray shape. Typecheck clean; pushed to `origin/main`
 and republished (visible rendering fix).
 
+### Twenty-ninth pass (2026-09-11): a way to hop between biomes
+Brief 21: biomes are a spatial noise field (`terrain.biome(x,z)`/`biomeAt`),
+not a per-player toggle, so "switch my biome" means finding the nearest
+point actually in a different biome and teleporting there rather than
+overriding the field under the player. A new `hopBiome()` in `src/main.ts`
+reads the player's current `terrain.biomeId`, then walks forward through
+`BIOMES` in index order (wrapping) — for each candidate id it grows a ring
+search (`findBiomePoint`, 5 m ring step, angular samples scaled to keep ring
+spacing roughly constant) out to `CFG.world.biomeHopRadius` (new tunable,
+default 400 m, sliderized `[50, 1000, 10]` in `src/ui/tune.ts`) looking for
+the nearest point whose `biomeId` matches; the first id (in cycle order)
+with a hit wins, so repeated presses tour the full biome list rather than
+bouncing between the same two neighbours. Lands via `player.teleport()`
+seated on `terrain.levelAt(terrain.levelOf(...), x, z)` — the player's own
+current level, not always the lower cave, matching the fix `spawnRelicAt`
+got in the twenty-fifth pass. A bounded search (no match found in any
+biome within the radius) does nothing and shows `chat.toast("no other
+biome found nearby")` rather than hanging or crashing. Wired to a new `B`
+hotkey (confirmed free against the README key table) right next to `G` in
+`src/main.ts`, and to a matching "Hop biome (B)" button in the tuning panel
+(`TuneCallbacks.onHopBiome`, `src/ui/tune.ts`) — same precedent as the
+Export/Import/Spawn-relic action buttons. Verified at `?seed=7`: typecheck
+clean; drove `__world.hopBiome()` directly eight presses in a row and read
+`terrain.biome(player.position.x, player.position.z).name` back as Dungeon,
+Glacier, Blood Cave, Sulphur Pit, Void Peaks, Deep Sea, Cathedral, Dusk
+Ridge — a clean tour in `BIOMES` order, not a bounce; dispatched a real
+`KeyB` `keydown` through the actual input system and confirmed the same
+cycle continues (Dusk Ridge → Root Cellar); opened the tuning panel
+(backtick) and clicked the real "Hop biome (B)" button, confirmed it
+advances the biome exactly the same way (Root Cellar → Crystal Vein).
+Screenshotted two distinct biomes reached this way — Crystal Vein (bright
+orange/purple glassy spires, HUD reading "Crystal Vein · surface") and
+Dungeon (HUD reading "Dungeon · surface", toast "hopped to Dungeon"
+visible on screen). Forced `CFG.world.biomeHopRadius` down to 3 m and
+confirmed the bounded-search fallback: the player didn't move and the
+toast read "no other biome found nearby", screenshotted.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

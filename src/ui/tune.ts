@@ -15,7 +15,7 @@ import type { Input } from "../player/input";
 type Range = [number, number, number]; // min, max, step
 
 const RANGES: Record<keyof Tunables, Record<string, Range>> = {
-  world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], climbSolidity: [0.3, 0.98, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1], crust: [1, 24, 0.5], vaultRadius: [1.2, 5, 0.1], vaultRing: [0.4, 2.5, 0.1], vaultTorchRange: [1, 8, 0.5], propUpperDensity: [0, 1, 0.05], torchLifeSec: [10, 600, 5], presenceEnabled: [0, 1, 1] },
+  world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], climbSolidity: [0.3, 0.98, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1], crust: [1, 24, 0.5], vaultRadius: [1.2, 5, 0.1], vaultRing: [0.4, 2.5, 0.1], vaultTorchRange: [1, 8, 0.5], propUpperDensity: [0, 1, 0.05], torchLifeSec: [10, 600, 5], presenceEnabled: [0, 1, 1], biomeHopRadius: [50, 1000, 10] },
   light: { localReach: [8, 80, 1], remoteReach: [4, 60, 1], inkStamp: [4, 60, 1], fogNear: [2, 80, 1], fogFar: [10, 200, 1], fog: [0, 1, 0.01], fogTone: [0, 1, 0.01], mottle: [0, 1, 0.01], shadowGamma: [0.4, 3, 0.05], ceilCell: [6, 80, 1], ceilArcSpacing: [0.4, 6, 0.1] },
   press: { printScale: [0.2, 1, 0.05], misreg: [0, 3, 0.1], edgeW: [0.5, 3, 0.1], depthCut: [0.002, 0.05, 0.001], normalCut: [0.1, 1, 0.01], grain: [0, 1, 0.01], speck: [0, 0.02, 0.0005], halftone: [0, 1, 0.01], halftoneScale: [2, 24, 0.5], halftoneAngle: [0, 90, 1], depthStrange: [0, 2, 0.05], shadowLift: [0, 1, 0.05] },
   dig: { radius: [0.6, 5, 0.1], depth: [0.1, 4, 0.05], tunnelRadius: [0.8, 6, 0.1], rate: [1, 20, 1], reach: [2, 12, 0.5], stepUp: [0.8, 2.2, 0.1] },
@@ -36,6 +36,8 @@ export type TuneCallbacks = {
   onRebuild: () => void;
   /** Drop a relic in front of the player (also the G key). */
   onSpawnRelic: () => void;
+  /** Hop to the nearest point in a different (cycling) biome (also the B key). */
+  onHopBiome: () => void;
 };
 
 export class Tune {
@@ -48,7 +50,7 @@ export class Tune {
     this.panel.innerHTML = `<h2>Tuning <span class="k">\` to close</span></h2>
       <div class="tune-actions">
         <button data-k="export">Export JSON</button><button data-k="import">Import</button><button data-k="link">Copy link</button>
-        <button data-k="rebuild">Rebuild world</button><button data-k="reset">Reset</button><button data-k="spawn">Spawn relic here (G)</button>
+        <button data-k="rebuild">Rebuild world</button><button data-k="reset">Reset</button><button data-k="spawn">Spawn relic here (G)</button><button data-k="hopbiome">Hop biome (B)</button>
       </div>
       <textarea data-k="json" rows="5" placeholder="paste JSON here, then Import"></textarea>
       <label class="tune-check"><input type="checkbox" data-k="stl"> STL miniatures in the cast (Bast, Rook, Cam) — reload to apply</label>
@@ -87,6 +89,7 @@ export class Tune {
     });
     q<HTMLButtonElement>("rebuild").addEventListener("click", () => { cb.onRebuild(); this.say("rebuilt"); });
     q<HTMLButtonElement>("spawn").addEventListener("click", () => { cb.onSpawnRelic(); this.say("relic dropped in front of you"); });
+    q<HTMLButtonElement>("hopbiome").addEventListener("click", () => cb.onHopBiome());
     const stl = q<HTMLInputElement>("stl");
     stl.checked = stlEnabled();
     stl.addEventListener("change", () => { setStlEnabled(stl.checked); this.say("saved — reload to change the cast"); });

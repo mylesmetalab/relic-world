@@ -25,6 +25,7 @@ Click to take the mouse.
 | **Q / E** | your figure's ink colorway |
 | **F** / **click** | grab the prop — or the player — under the cursor (both get the same white outline, the cursor fills in) · throw along your aim — the dashed arc and landing ring show exactly where a prop goes · with empty hands, click **digs** |
 | **X** / **G** | plant a torch that lights and prints the rock around it · spawn a relic in front of you |
+| **B** | hop to a different biome — teleports to the nearest point in the next biome in sequence (also a button in the tuning panel) |
 | **Tab** | the paper map — the ink map itself, printed in as you explore, with players as dots |
 | **Enter** | chat — what you type streams above your figure as you type; Enter sends, Esc cancels |
 | **\`** | the tuning panel — every number the look and the world are built from; Export gives JSON to paste back, Copy link shares a `?cfg=` URL |

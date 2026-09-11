@@ -1095,6 +1095,15 @@ touring multiple distinct biomes across a few presses, not bouncing
 between the same two), screenshot at least two different biomes reached
 this way. Confirm the button in the tune panel does the same thing.
 
+**Built (2026-09-11):** `B` hotkey + a "Hop biome (B)" tune-panel button,
+both calling a new `hopBiome()` in `src/main.ts` — cycles forward through
+`BIOMES` in index order, ring-searches outward (bounded by a new
+`CFG.world.biomeHopRadius`, default 400 m) for the nearest point in that
+biome, and `player.teleport()`s there seated on the player's own current
+level. Falls back to a `chat.toast` message and does nothing if no other
+biome is found within the radius. See PLAN.md's "Twenty-ninth pass" for
+verification detail.
+
 ---
 
 ## How to work here
