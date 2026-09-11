@@ -154,6 +154,19 @@ same as always.
   fast-thrown prop, or another player thrown/flung at speed, passes close by
   — an ordinary push or a normal walk-up stays quiet (`impactPropSpeed`,
   `impactPlayerSpeed`, `impactRadius` in the panel set the cutoffs).
+- **Night takes your ink back.** A day/night cycle (`dayNightCycleSec`, ~10
+  minutes by default) runs everywhere, shared world included. By day,
+  "unprinted until lit" works as always — once inked, always printed. At
+  night that permanence stops applying: a place you explored earlier goes
+  dark again the moment nothing is actually lighting it right now, unless a
+  torch — yours, a peer's, or a permanent shrine/brazier — is still standing
+  and burning there. Let a planted torch run out at night and its patch goes
+  dark with it. The surface itself reads duskier as night falls (still bare
+  paper, just a darker sheet of it — no skyline). The tuning panel's Time
+  phase buttons (Auto / Day / Dusk / Night) freeze the cycle at any phase so
+  you can look at — and tune — exactly one of them; `nightIntensity` is a
+  safety valve that fully disables the darkening at 0. The paper map (Tab)
+  is untouched either way — it always shows your full inked history.
 
 ## How it's built
 

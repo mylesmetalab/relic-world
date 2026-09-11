@@ -948,6 +948,72 @@ visible on screen). Forced `CFG.world.biomeHopRadius` down to 3 m and
 confirmed the bounded-search fallback: the player didn't move and the
 toast read "no other biome found nearby", screenshotted.
 
+### Thirtieth pass (2026-09-11): night mode
+Brief 20, shipped in full. A new `uNight` uniform threads through both
+copies of the "unprinted until lit" block (`TOON_FRAGMENT` and
+`VAULT_FRAGMENT` in `src/render/shaders.ts`): `printed = smoothstep(0.08,
+0.5, mix(max(inked, lit), lit, uNight))` — at `uNight = 0` this is
+byte-for-byte the old formula (`mix` at `t=0` returns its first argument
+exactly, so day rendering is provably unchanged, not just "looks the
+same"); at `uNight = 1` only this frame's real `lit` counts, so a
+previously-inked, currently-unlit spot reverts to bare paper. `setNight`
+(`src/render/pipeline.ts`) pushes it to `rockMat`/`ceilMat`/`figureMats`
+every frame, the same unconditional per-frame pattern `setDepth` already
+used for `uDepth` — main.ts computes it either from the phase lock or from
+`p.time % dayNightCycleSec` (a single cosine lobe for a smooth day→night→
+day, no hard cut), scaled by the new `nightIntensity` safety valve (0 fully
+disables it). `CFG.world.timePhase: "auto" | "day" | "dusk" | "night"`
+(plus `dayNightCycleSec`, `nightIntensity`) is a new string-valued field in
+an otherwise all-numeric `Tunables.world` — `loadConfig` special-cases it
+(the generic numeric-merge loop skips the key, a separate string check
+restores it), and `tune.ts`'s per-key slider loop skips it the same way, in
+favour of Auto/Day/Dusk/Night buttons — a small custom control (mirroring
+the mouse/trackpad control-scheme select's precedent, per Myles's literal
+ask for buttons, not a dropdown) that write straight to `CFG.world.
+timePhase` and highlight the active one, refreshed after Import/Reset too.
+Surface dusk-toning is one small additive change to the existing
+depth-dimming paper-tone line in `TOON_FRAGMENT` (`* (1.0 - uNight * 0.4)`)
+plus the same treatment for `main.ts`'s `scene.background` color when
+`onSurface` (previously a flat, undimmed `PAPER` hex) — both still flat
+bare paper, just a darker sheet of it; no skyline, no gradient. A new
+sparse permanent-brazier scatter (`BRAZIER_GRID = 90` in `src/world/
+terrain.ts`, mirroring the vault/boulder grid-cache pattern exactly, its
+own hash) spawns a taller/bulkier stone-cairn-and-flame fixture
+(`Props.addBrazier`/`brazierMesh`, `BRAZIER_REACH = 24`, visually distinct
+from a hand torch) in the lower cave — `placed: false` like a vault pillar
+torch, so it's immune to brief 16's burnout for free, no new code needed
+there.
+
+Verified at `?seed=7`: typecheck clean throughout. Confirmed the day/night
+math directly against the shipped formula (not just eyeballing) — read the
+real `inkMap` texture data and the real `p.torches` list back, replicated
+`smoothstep`/`printed` in JS, and got `dayNear/dayFar` both `printed=1`
+(day unaffected) vs `nightNear=1`/`nightFar=0` (night's whole point) at two
+real, ink-stamped points. Then proved it visually: with the player's own
+carried light pinned to a hair's-width reach (isolating "what's actually
+lit right now" from "what I'm currently standing next to"), the same
+camera position read as full black-ink hatched rock at Day and flat bare
+paper at Night — screenshotted both, plus read back the literal rendered
+pixel color of a distant background peak at the same screen coordinate
+(215,212,193 by day vs 172,169,154 by night, ≈80% of day's brightness —
+"duskier, not black," exactly as asked). Watched a placed torch's lit
+patch (screenshotted, fully inked) go fully bare (screenshotted) the
+instant `tickTorches` expired it while locked to Night. Confirmed
+`nightIntensity: 0` forces `uNight` to `0` even locked to Night. Confirmed
+Export JSON / `?cfg=` both carry `timePhase`/`dayNightCycleSec`/
+`nightIntensity` after changing them, and Import round-trips the string
+`timePhase` field correctly. Clicked the real Day/Dusk/Night/Auto buttons
+in the tuning panel (not scripted state) and confirmed `CFG.world.
+timePhase` follows and the active button highlights. Opened the paper map
+(Tab) at Day and at Night at the same explored spot and confirmed it was
+pixel-identical either way. Found a real brazier site via `terrain.
+brazierSitesInChunk`, streamed its chunk in, and confirmed the live
+`TorchProp` reads `reach: 24`, `placed: false`, `life: Infinity` —
+screenshotted its bulkier cairn-and-flame silhouette next to a normal hand
+torch's thin stake for the visual contrast the brief asked for. No scope
+cuts — the whole brief shipped, phase-lock/tuning-export included, per
+Myles's explicit ask that piece not be skipped.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

@@ -1053,6 +1053,22 @@ disables the darkening (day-like regardless of phase). Confirm Export
 JSON / Copy-link actually includes the new night tunables after changing
 them from their defaults.
 
+**Built** (2026-09-11, thirtieth pass — see `docs/PLAN.md`'s "Status" for
+the full verification detail): shipped in full, no scope cuts — `uNight`
+threaded through both `TOON_FRAGMENT`/`VAULT_FRAGMENT` copies of the
+"unprinted until lit" block, `setNight` in `pipeline.ts` (the `setDepth`
+per-frame pattern), the `CFG.world.timePhase` Auto/Day/Dusk/Night button
+row in the tune panel (mirroring the control-scheme select precedent),
+`dayNightCycleSec`/`nightIntensity` as ordinary sliders riding the
+existing Export/`?cfg=` plumbing, surface dusk-toning (rock paper-tone
+line + `main.ts`'s background color), and a sparse permanent-brazier
+scatter (`terrain.brazierSitesInChunk`, `Props.addBrazier`) mirroring the
+vault/boulder grid pattern. Verified against the real formula (JS-replica
+of `printed` against live `inkMap`/torch data), real screenshots (Day vs
+Night at the same camera position and at the same distant pixel), a real
+torch burnout, real tune-panel button clicks, and a real brazier site
+streamed in and inspected live.
+
 ## 21. A way to hop between biomes
 
 **Goal:** Myles wants a button or hotkey that jumps him to a different

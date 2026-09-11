@@ -163,6 +163,7 @@ function makeToonMaterial(
       uDepth: { value: 0 },
       uDepthStrange: { value: 1 },
       uShadowLift: { value: 0 },
+      uNight: { value: 0 },
       // Print-target size in px — only read by the USE_INSTANCE_HATCH branch
       // (instanced rocks project their own hatch anchor in-shader instead of
       // via anchorHatch's onBeforeRender); kept up to date by resizePipeline.
@@ -294,6 +295,7 @@ export function createPipeline(canvas: HTMLCanvasElement, printScale = 0.6, ndHa
       uMeshY: { value: 0 },
       uDepth: { value: 0 },
       uDepthStrange: { value: 1 },
+      uNight: { value: 0 },
     },
   });
 
@@ -392,6 +394,16 @@ export function applyConfig(p: Pipeline): void {
 export function setDepth(p: Pipeline, depth: number): void {
   for (const m of [p.rockMat, p.ceilMat, ...p.figureMats]) m.uniforms.uDepth.value = depth;
   p.inkPass.uniforms.uDepth.value = depth;
+}
+
+/** 0 (day, byte-for-byte today's rendering) .. 1 (night — only a torch
+ *  actually burning THIS frame keeps a spot printed; the permanent ink-map
+ *  history alone no longer counts). Inherently dynamic — changes every
+ *  frame from the clock or the phase lock (`CFG.world.timePhase`) — so it's
+ *  called unconditionally every frame from main.ts, the same `setDepth`-
+ *  style pattern rather than something routed through `applyConfig`. */
+export function setNight(p: Pipeline, amt: number): void {
+  for (const m of [p.rockMat, p.ceilMat, ...p.figureMats]) m.uniforms.uNight.value = amt;
 }
 
 export function setWorldSeed(p: Pipeline, seed: number): void {

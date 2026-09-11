@@ -89,6 +89,13 @@ uniform int uLightCount;
 uniform sampler2D uInkMap;
 uniform vec4 uInkMapRect;
 uniform vec3 uPaper;
+// Night mode (brief 20): 0 = today's rendering exactly (permanent ink-map
+// history OR this frame's real light); 1 = only a torch actually burning
+// RIGHT NOW keeps a spot printed — the permanent map alone no longer
+// counts, so an unlit, previously-explored spot goes dark again. Sourced
+// from the session clock (or the phase lock) each frame via setNight in
+// pipeline.ts, main.ts.
+uniform float uNight;
 // Biomes: N cave ramps stacked as rows of one texture, a pen per row, and a
 // world-space region field (same noise as world/biomes.ts) with HARD edges.
 uniform sampler2D uBiomeRamps;
@@ -368,11 +375,15 @@ void main() {
     vec2 muv = (vPosW.xz - uInkMapRect.xy) / uInkMapRect.z;
     float inked = (muv.x >= 0.0 && muv.x <= 1.0 && muv.y >= 0.0 && muv.y <= 1.0)
       ? texture2D(uInkMap, muv).r : 0.0;
-    float printed = smoothstep(0.08, 0.5, max(inked, lit));
+    // At uNight=0 this is byte-for-byte today's "permanent OR current"
+    // rule; at uNight=1 only THIS frame's real light counts, so a place
+    // goes dark the moment nothing is currently lighting it.
+    float printed = smoothstep(0.08, 0.5, mix(max(inked, lit), lit, uNight));
     // Bare paper carries a faint pencil under-drawing of the tone so the
     // form reads before the ink lands; the sheet itself reads dimmer the
-    // deeper below the surface it is.
-    vec3 paper = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
+    // deeper below the surface it is, and duskier at night (surface ground
+    // reads this same paper look before it's ever been inked).
+    vec3 paper = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3) * (1.0 - uNight * 0.4);
     vec3 pencil = mix(paper, paper * 0.82, step(tone, blackCut) * 0.6);
     col = mix(pencil, col, printed);
   }
@@ -587,6 +598,10 @@ uniform int uLightCount;
 uniform sampler2D uInkMap;
 uniform vec4 uInkMapRect;
 uniform vec3 uPaper;
+// Night mode (brief 20) — see TOON_FRAGMENT's uNight for the full story;
+// same formula, same uniform, threaded through this second copy of the
+// "unprinted until lit" block.
+uniform float uNight;
 // The slice of the ramp the vault draws from (the blue upper range).
 uniform float uRampLo;
 uniform float uRampHi;
@@ -691,7 +706,7 @@ void main() {
     vec2 muv = (vPosE.xz - uInkMapRect.xy) / uInkMapRect.z;
     float inked = (muv.x >= 0.0 && muv.x <= 1.0 && muv.y >= 0.0 && muv.y <= 1.0)
       ? texture2D(uInkMap, muv).r : 0.0;
-    float printed = smoothstep(0.08, 0.5, max(inked, lit));
+    float printed = smoothstep(0.08, 0.5, mix(max(inked, lit), lit, uNight));
     vec3 paper = uPaper * (1.0 - clamp(depthAmt, 0.0, 1.0) * 0.3);
     col = mix(paper, col, printed);
   }

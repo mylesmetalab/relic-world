@@ -39,7 +39,16 @@ const VAULT_CHANCE = 0.3;
 const BOULDER_GRID = 40;
 const BOULDER_CHANCE = 0.35;
 
+/** ~90 m grid of candidate PERMANENT brazier sites (brief 20's night-mode
+ *  landmarks) — sparser than either the vault or boulder grid on purpose,
+ *  so they read as rare waypoints ("so you can sort of see some things"
+ *  even alone at night) rather than clutter. Lower-cave only, same gating
+ *  as a boulder site; mirrors that pattern exactly. */
+const BRAZIER_GRID = 90;
+const BRAZIER_CHANCE = 0.5;
+
 export type BoulderSite = { id: string; x: number; z: number; yaw: number };
+export type BrazierSite = { id: string; x: number; z: number };
 
 export type Vault = {
   id: string; cx: number; cz: number; doorAngle: number;
@@ -88,6 +97,8 @@ export class Terrain {
   private readonly vaultCache = new Map<string, Vault | null>();
   /** Boulder sites, memoised per 40 m grid cell — same pattern as `vaultCache`. */
   private readonly boulderCache = new Map<string, BoulderSite | null>();
+  /** Brazier sites, memoised per 90 m grid cell — same pattern again. */
+  private readonly brazierCache = new Map<string, BrazierSite | null>();
 
   constructor(readonly seed: number) {
     this.floorLo = new Simplex2(seed * 7 + 1);
@@ -240,6 +251,45 @@ export class Terrain {
       for (const gz of gzs) {
         const b = this.boulderSite(gx * BOULDER_GRID + 1, gz * BOULDER_GRID + 1);
         if (b && b.x >= ox && b.x < ox + CHUNK && b.z >= oz && b.z < oz + CHUNK) out.push(b);
+      }
+    }
+    return out;
+  }
+
+  /** The brazier site (if any) whose ~90 m cell contains (x,z): lower-cave
+   *  only, well clear of spawn, in an open room — same memoised per-grid-
+   *  cell pattern as `vault`/`boulderSite`, its own hash so it never
+   *  competes with either. */
+  brazierSite(x: number, z: number): BrazierSite | null {
+    const gx = Math.floor(x / BRAZIER_GRID), gz = Math.floor(z / BRAZIER_GRID);
+    const key = `${gx},${gz}`;
+    const cached = this.brazierCache.get(key);
+    if (cached !== undefined) return cached;
+    const rng = mulberry32(hash3(this.seed ^ 0xc0ffee11, gx, gz));
+    let s: BrazierSite | null = null;
+    if (rng() <= BRAZIER_CHANCE) {
+      const jitter = BRAZIER_GRID * 0.3;
+      const bx = gx * BRAZIER_GRID + BRAZIER_GRID / 2 + (rng() - 0.5) * jitter;
+      const bz = gz * BRAZIER_GRID + BRAZIER_GRID / 2 + (rng() - 0.5) * jitter;
+      if (Math.hypot(bx, bz) >= SPAWN_CLEAR * 3 && this.isOpen(bx, bz) && this.gallery(bx, bz) < 0.4) {
+        s = { id: `br${gx}_${gz}`, x: bx, z: bz };
+      }
+    }
+    this.brazierCache.set(key, s);
+    return s;
+  }
+
+  /** Every brazier site whose centre could land inside this 24 m chunk —
+   *  mirrors `boulderSitesInChunk`/`vaultsInChunk`. */
+  brazierSitesInChunk(cx: number, cz: number): BrazierSite[] {
+    const ox = cx * CHUNK, oz = cz * CHUNK;
+    const gxs = new Set([Math.floor(ox / BRAZIER_GRID), Math.floor((ox + CHUNK - 1) / BRAZIER_GRID)]);
+    const gzs = new Set([Math.floor(oz / BRAZIER_GRID), Math.floor((oz + CHUNK - 1) / BRAZIER_GRID)]);
+    const out: BrazierSite[] = [];
+    for (const gx of gxs) {
+      for (const gz of gzs) {
+        const s = this.brazierSite(gx * BRAZIER_GRID + 1, gz * BRAZIER_GRID + 1);
+        if (s && s.x >= ox && s.x < ox + CHUNK && s.z >= oz && s.z < oz + CHUNK) out.push(s);
       }
     }
     return out;

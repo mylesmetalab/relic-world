@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { applyConfig, createPipeline, renderFrame, resizePipeline, setWorldSeed, setDepth, MAX_LIGHTS, INK_BLACK, PAPER, type Torch } from "./render/pipeline";
+import { applyConfig, createPipeline, renderFrame, resizePipeline, setWorldSeed, setDepth, setNight, MAX_LIGHTS, INK_BLACK, PAPER, type Torch } from "./render/pipeline";
 import { COLORWAYS } from "./render/palette";
 import { initPhysics, rayDistance, rayHit } from "./physics/world";
 import { Terrain, type Level } from "./world/terrain";
@@ -477,6 +477,8 @@ async function boot(): Promise<void> {
   const tmp = new THREE.Vector3();
   const remotePrev = new THREE.Vector3();
   const marchPt = new THREE.Vector3();
+  const paperColor = new THREE.Color(PAPER);
+  const nightBg = new THREE.Color();
   const peerPositions = new Map<string, { x: number; y: number; z: number }>();
   let acc = 0;
   let last = performance.now();
@@ -865,10 +867,37 @@ async function boot(): Promise<void> {
     voice.update(player.position, peerPositions);
     lastSpeed = speed;
 
+    // ── Night mode (brief 20): 0 = day (today's rendering, byte-for-byte);
+    // 1 = night — only a torch actually burning THIS frame keeps a spot
+    // printed, the permanent ink-map history alone no longer counts.
+    // "auto" derives the phase from the session clock (p.time, already
+    // accumulated for uTime); the phase-lock buttons in the tune panel
+    // freeze it so a look can be tuned against exactly one phase without
+    // waiting for the cycle. nightIntensity is a safety valve: 0 disables
+    // the darkening entirely regardless of phase. ───────────────────────
+    const N = CFG.world;
+    let nightAmt: number;
+    if (N.timePhase === "day") nightAmt = 0;
+    else if (N.timePhase === "dusk") nightAmt = 0.5;
+    else if (N.timePhase === "night") nightAmt = 1;
+    else {
+      const cyc = Math.max(1, N.dayNightCycleSec);
+      const t = (p.time % cyc) / cyc;
+      // Smooth day→night→day: one cosine lobe over the cycle, 0 at t=0
+      // (noon) rising to 1 at t=0.5 (midnight) and back — no hard cut.
+      nightAmt = (1 - Math.cos(t * Math.PI * 2)) * 0.5;
+    }
+    nightAmt *= N.nightIntensity;
+    setNight(p, nightAmt);
+
     // The surface is the unprinted page: paper sky up top, ink black below.
     // Judged against the undug surface, so a pit you are digging is still daylit.
+    // The sky itself dusk-tones with the same night amount as the ground's
+    // bare-paper look (shaders.ts) — still flat bare paper, just a darker
+    // sheet of it; no skyline, no gradient.
     const onSurface = player.position.y > terrain.surface(player.position.x, player.position.z) - 6;
-    (p.scene.background as THREE.Color).setHex(onSurface ? PAPER : INK_BLACK);
+    if (onSurface) (p.scene.background as THREE.Color).copy(nightBg.copy(paperColor).multiplyScalar(1 - nightAmt * 0.4));
+    else (p.scene.background as THREE.Color).setHex(INK_BLACK);
     // Deeper is stranger: 0 at/above the surface, 1 by ~40 m below it.
     const depthBelow = terrain.surface(player.position.x, player.position.z) - player.position.y;
     setDepth(p, Math.min(1, Math.max(0, depthBelow / 40)));

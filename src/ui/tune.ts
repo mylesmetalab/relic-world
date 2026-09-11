@@ -15,7 +15,7 @@ import type { Input } from "../player/input";
 type Range = [number, number, number]; // min, max, step
 
 const RANGES: Record<keyof Tunables, Record<string, Range>> = {
-  world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], climbSolidity: [0.3, 0.98, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1], crust: [1, 24, 0.5], vaultRadius: [1.2, 5, 0.1], vaultRing: [0.4, 2.5, 0.1], vaultTorchRange: [1, 8, 0.5], propUpperDensity: [0, 1, 0.05], torchLifeSec: [10, 600, 5], presenceEnabled: [0, 1, 1], biomeHopRadius: [50, 1000, 10] },
+  world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], climbSolidity: [0.3, 0.98, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1], crust: [1, 24, 0.5], vaultRadius: [1.2, 5, 0.1], vaultRing: [0.4, 2.5, 0.1], vaultTorchRange: [1, 8, 0.5], propUpperDensity: [0, 1, 0.05], torchLifeSec: [10, 600, 5], presenceEnabled: [0, 1, 1], biomeHopRadius: [50, 1000, 10], dayNightCycleSec: [60, 3600, 30], nightIntensity: [0, 1, 0.05] },
   light: { localReach: [8, 80, 1], remoteReach: [4, 60, 1], inkStamp: [4, 60, 1], fogNear: [2, 80, 1], fogFar: [10, 200, 1], fog: [0, 1, 0.01], fogTone: [0, 1, 0.01], mottle: [0, 1, 0.01], shadowGamma: [0.4, 3, 0.05], ceilCell: [6, 80, 1], ceilArcSpacing: [0.4, 6, 0.1] },
   press: { printScale: [0.2, 1, 0.05], misreg: [0, 3, 0.1], edgeW: [0.5, 3, 0.1], depthCut: [0.002, 0.05, 0.001], normalCut: [0.1, 1, 0.01], grain: [0, 1, 0.01], speck: [0, 0.02, 0.0005], halftone: [0, 1, 0.01], halftoneScale: [2, 24, 0.5], halftoneAngle: [0, 90, 1], depthStrange: [0, 2, 0.05], shadowLift: [0, 1, 0.05] },
   dig: { radius: [0.6, 5, 0.1], depth: [0.1, 4, 0.05], tunnelRadius: [0.8, 6, 0.1], rate: [1, 20, 1], reach: [2, 12, 0.5], stepUp: [0.8, 2.2, 0.1] },
@@ -54,6 +54,10 @@ export class Tune {
       </div>
       <textarea data-k="json" rows="5" placeholder="paste JSON here, then Import"></textarea>
       <label class="tune-check"><input type="checkbox" data-k="stl"> STL miniatures in the cast (Bast, Rook, Cam) — reload to apply</label>
+      <div class="tune-actions" data-k="phaseButtons">
+        <span>Time phase</span>
+        <button data-phase="auto">Auto</button><button data-phase="day">Day</button><button data-phase="dusk">Dusk</button><button data-phase="night">Night</button>
+      </div>
       <label class="tune-row"><span>Look controls</span>
         <select data-k="scheme">
           <option value="auto">Auto</option>
@@ -100,6 +104,18 @@ export class Tune {
       input.setControlScheme(scheme.value as "auto" | "mouse" | "trackpad");
       this.refreshSchemeOut();
     });
+    // Phase lock (brief 20, Myles's explicit ask): actual buttons, not a
+    // dropdown — "auto" runs the real day/night clock; the other three
+    // freeze `uNight` at a fixed value every frame so a look can be tuned
+    // against exactly one phase without waiting for the cycle.
+    q<HTMLDivElement>("phaseButtons").querySelectorAll<HTMLButtonElement>("button[data-phase]").forEach((b) => {
+      b.addEventListener("click", () => {
+        CFG.world.timePhase = b.dataset.phase as Tunables["world"]["timePhase"];
+        this.refreshPhaseButtons();
+        this.say(`time phase: ${b.dataset.phase}`);
+      });
+    });
+    this.refreshPhaseButtons();
     q<HTMLButtonElement>("reset").addEventListener("click", () => {
       resetConfig();
       for (let i = 0; i < BIOMES.length; i++) Object.assign(BIOMES[i]!.pen, BIOME_DEFAULTS[i]!.pen), Object.assign(BIOMES[i]!, { terrace: BIOME_DEFAULTS[i]!.terrace, relief: BIOME_DEFAULTS[i]!.relief, rocks: BIOME_DEFAULTS[i]!.rocks, tallShare: BIOME_DEFAULTS[i]!.tallShare, ceilLift: BIOME_DEFAULTS[i]!.ceilLift, ramp: BIOME_DEFAULTS[i]!.ramp });
@@ -119,7 +135,10 @@ export class Tune {
   toggle(): void {
     this.open = !this.open;
     this.panel.hidden = !this.open;
-    if (this.open) this.refreshSchemeOut();
+    if (this.open) {
+      this.refreshSchemeOut();
+      this.refreshPhaseButtons(); // CFG.world.timePhase can change from outside the panel (?cfg=, the console)
+    }
   }
 
   /** Show which device the current scheme resolves to (only informative for
@@ -127,6 +146,15 @@ export class Tune {
   private refreshSchemeOut(): void {
     const out = this.panel.querySelector<HTMLOutputElement>('[data-k="schemeOut"]');
     if (out) out.textContent = this.input.controlScheme === "auto" ? `→ ${this.input.resolvedDevice()}` : "";
+  }
+
+  /** Highlight whichever phase button matches `CFG.world.timePhase` — called
+   *  on click, and again after Import/Reset can change it from under the UI. */
+  private refreshPhaseButtons(): void {
+    const host = this.panel.querySelector<HTMLDivElement>('[data-k="phaseButtons"]');
+    host?.querySelectorAll<HTMLButtonElement>("button[data-phase]").forEach((b) => {
+      b.classList.toggle("on", b.dataset.phase === CFG.world.timePhase);
+    });
   }
 
   /** Config + biomes (pen, ground, ramp name) as one JSON document. */
@@ -158,6 +186,7 @@ export class Tune {
       det.innerHTML = `<summary>${section}${section === "world" ? " <i>(rebuild)</i>" : ""}</summary>`;
       const vals = CFG[section] as unknown as Record<string, number>;
       for (const key of Object.keys(vals)) {
+        if (key === "timePhase") continue; // its own button row, not a slider
         const r = RANGES[section][key] ?? [0, 1, 0.01];
         det.appendChild(this.slider(key, vals[key]!, r, (v) => {
           vals[key] = v;
@@ -190,6 +219,7 @@ export class Tune {
       host.appendChild(det);
       void i;
     });
+    this.refreshPhaseButtons();
   }
 
   private slider(label: string, value: number, r: Range, onChange: (v: number) => void): HTMLLabelElement {

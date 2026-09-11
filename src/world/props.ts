@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import { anchorHatch, makeFigureMaterial, disposeFigureMaterial, setFigureColorway, type Pipeline } from "../render/pipeline";
 import type { Physics } from "../physics/world";
-import { CHUNK, Terrain, rockGeometry, boulderGeometry, vaultDoorway, type Level, type Vault, type VaultDoorway, type BoulderSite } from "./terrain";
+import { CHUNK, Terrain, rockGeometry, boulderGeometry, vaultDoorway, type Level, type Vault, type VaultDoorway, type BoulderSite, type BrazierSite } from "./terrain";
 import { mulberry32 } from "./noise";
 import { loadPacked, PACKED_IDS, type PackedId } from "./models";
 import { FACING } from "../player/figure";
@@ -60,6 +60,11 @@ export type ChunkProps = { key: string; props: Prop[]; statics: Array<{ body: RA
  *  `maxLife: Infinity` and are never ticked down. */
 export type TorchProp = { id: string; position: THREE.Vector3; reach: number; mesh: THREE.Group; placed: boolean; life: number; maxLife: number };
 export const TORCH_REACH = 15;
+/** Permanent shrine-style braziers (brief 20): a bigger fixed reach than a
+ *  hand torch, so a landmark reads unmistakably as "someone built this to
+ *  last," not something a player dropped. Never `placed`, so — like a
+ *  vault pillar torch — it's immune to brief 16's burnout by construction. */
+export const BRAZIER_REACH = 24;
 
 const GOLD = COLORWAYS.findIndex((c) => c.name === "Gold Leaf");
 
@@ -76,6 +81,7 @@ export class Props {
   /** Every torch in the world right now (shrines + placed), by id. */
   readonly torches = new Map<string, TorchProp>();
   private torchMat: THREE.ShaderMaterial | null = null;
+  private brazierMat: THREE.ShaderMaterial | null = null;
   /** Every currently-loaded vault's doorway geometry, by vault id — main.ts
    *  checks these each frame against `placedTorches()`. */
   readonly vaultDoors = new Map<string, VaultDoorway>();
@@ -99,6 +105,10 @@ export class Props {
     for (const v of this.terrain.vaultsInChunk(cx, cz)) this.addVault(cp, v);
     // Boulder site(s) whose ~40 m site lands in this chunk (lower cave only).
     for (const b of this.terrain.boulderSitesInChunk(cx, cz)) this.addBoulder(cp, b);
+    // Permanent brazier landmark(s) whose ~90 m site lands in this chunk
+    // (brief 20: something to see by at night, even alone, without a torch
+    // of your own).
+    for (const br of this.terrain.brazierSitesInChunk(cx, cz)) this.addBrazierAt(cp, br);
     return cp;
   }
 
@@ -195,6 +205,54 @@ export class Props {
     const t: TorchProp = { id, position: new THREE.Vector3(x, y + 1.35, z), reach: TORCH_REACH, mesh, placed, life: maxLife, maxLife };
     this.torches.set(id, t);
     return t;
+  }
+
+  /** A taller, bulkier fixture than a hand torch — a squat stone cairn base
+   *  under a bigger flame — so it reads as a landmark someone built to
+   *  last, not something a player dropped. Shares `torchMesh`'s pattern
+   *  (own cached material, hull-outlined pieces) but its own geometry and
+   *  proportions. */
+  private brazierMesh(): THREE.Group {
+    if (!this.brazierMat) {
+      this.brazierMat = makeFigureMaterial(this.p);
+      setFigureColorway(this.brazierMat, COLORWAYS.findIndex((c) => c.name === "Riso Dungeon"));
+      this.brazierMat.uniforms.uMinY.value = 0;
+      this.brazierMat.uniforms.uMaxY.value = 2.1;
+    }
+    const g = new THREE.Group();
+    const base = new THREE.CylinderGeometry(0.28, 0.42, 0.95, 6, 1);
+    base.translate(0, 0.475, 0);
+    const flame = rockGeometry(mulberry32(11), 0.27, 0.85);
+    flame.translate(0, 1.2, 0);
+    for (const geo of [base, flame]) {
+      const m = new THREE.Mesh(geo, this.brazierMat);
+      anchorHatch(this.p, m, 1.7);
+      g.add(m);
+      const hull = new THREE.Mesh(geo, this.p.hullMat);
+      this.p.ndHidden.add(hull);
+      g.add(hull);
+    }
+    return g;
+  }
+
+  /** Add a permanent brazier landmark. Idempotent by id, never `placed` (so
+   *  it never expires, exactly like a vault pillar torch). */
+  addBrazier(id: string, x: number, y: number, z: number): TorchProp {
+    const existing = this.torches.get(id);
+    if (existing) return existing;
+    const mesh = this.brazierMesh();
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = (x * 5 + z * 11) % 6.28;
+    this.root.add(mesh);
+    const t: TorchProp = { id, position: new THREE.Vector3(x, y + 1.2, z), reach: BRAZIER_REACH, mesh, placed: false, life: Infinity, maxLife: Infinity };
+    this.torches.set(id, t);
+    return t;
+  }
+
+  private addBrazierAt(cp: ChunkProps, site: BrazierSite): void {
+    const id = `brazier:${site.id}`;
+    this.addBrazier(id, site.x, this.terrain.floor(site.x, site.z), site.z);
+    cp.torches.push(id); // reuses the same dispose/removeTorch cleanup path as a shrine torch
   }
 
   removeTorch(id: string): void {

@@ -47,6 +47,22 @@ export type Tunables = {
      *  so a seed with a missing/far biome fails gracefully instead of
      *  hanging the search. */
     biomeHopRadius: number;
+    /** Night mode's phase lock (Myles's explicit ask): "auto" runs the real
+     *  day/night clock (`dayNightCycleSec`); "day"/"dusk"/"night" freeze
+     *  `uNight` at a fixed value (0 / 0.5 / 1) every frame regardless of
+     *  the clock, so a look can be tuned against exactly one phase without
+     *  waiting for the cycle. A discrete mode, not a numeric slider — set
+     *  from the Auto/Day/Dusk/Night buttons in the tune panel, the same
+     *  custom-control precedent as the mouse/trackpad control scheme
+     *  (which lives on `Input`/`settings.ts`, not here — this one has to
+     *  live in `CFG` so it rides the existing Export/Copy-link JSON too). */
+    timePhase: "auto" | "day" | "dusk" | "night";
+    /** Full day→night→day cycle length in "auto" mode, seconds. */
+    dayNightCycleSec: number;
+    /** Safety valve: 0 fully disables night's darkening (day-like
+     *  regardless of phase) via `?cfg=`, without a redeploy, in case the
+     *  shared-world default turns out too harsh. 1 is the tuned strength. */
+    nightIntensity: number;
   };
   light: {
     localReach: number;
@@ -173,7 +189,7 @@ export type Tunables = {
 };
 
 export const DEFAULTS: Tunables = {
-  world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, climbSolidity: 0.85, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4, crust: 6, vaultRadius: 2.4, vaultRing: 1.0, vaultTorchRange: 3, propUpperDensity: 0.4, torchLifeSec: 180, presenceEnabled: 1, biomeHopRadius: 400 },
+  world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, climbSolidity: 0.85, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4, crust: 6, vaultRadius: 2.4, vaultRing: 1.0, vaultTorchRange: 3, propUpperDensity: 0.4, torchLifeSec: 180, presenceEnabled: 1, biomeHopRadius: 400, timePhase: "auto", dayNightCycleSec: 600, nightIntensity: 1 },
   light: { localReach: 34, remoteReach: 22, inkStamp: 26, fogNear: 14, fogFar: 70, fog: 0.5, fogTone: 0.4, mottle: 0.3, shadowGamma: 1.25, ceilCell: 26, ceilArcSpacing: 1.6 },
   press: { printScale: 0.6, misreg: 0.6, edgeW: 1.0, depthCut: 0.012, normalCut: 0.5, grain: 0.9, speck: 0.004, halftone: 0, halftoneScale: 4, halftoneAngle: 20, depthStrange: 1, shadowLift: 0 },
   dig: { radius: 1.2, depth: 0.3, tunnelRadius: 1.2, rate: 5, reach: 4.5, stepUp: 1.3 },
@@ -190,7 +206,9 @@ function clone<T>(v: T): T {
 /** The live values. Mutated in place by the tuning panel and by `loadConfig`. */
 export const CFG: Tunables = clone(DEFAULTS);
 
-/** Deep-merge a partial config (from JSON or the URL) into CFG. */
+/** Deep-merge a partial config (from JSON or the URL) into CFG. Every field
+ *  is a number except `world.timePhase` (a discrete string mode), which the
+ *  generic numeric loop below skips and a separate check restores. */
 export function loadConfig(partial: unknown): void {
   if (!partial || typeof partial !== "object") return;
   const src = partial as Record<string, Record<string, unknown>>;
@@ -199,10 +217,13 @@ export function loadConfig(partial: unknown): void {
     if (!from) continue;
     const to = CFG[section] as unknown as Record<string, number>;
     for (const k of Object.keys(to)) {
+      if (k === "timePhase") continue;
       const v = from[k];
       if (typeof v === "number" && Number.isFinite(v)) to[k] = v;
     }
   }
+  const phase = (src.world as Record<string, unknown> | undefined)?.timePhase;
+  if (phase === "auto" || phase === "day" || phase === "dusk" || phase === "night") CFG.world.timePhase = phase;
 }
 
 export function resetConfig(): void {
