@@ -1071,6 +1071,48 @@ shipped, not guessed at.
 - Typecheck clean throughout; both fixes pushed to `origin/main` and
   republished (both are visible rendering changes).
 
+### Thirty-second pass (2026-09-11): biomes rendered as the wrong biome — a sin()-based hash with no cross-platform guarantee
+Myles's "biomes don't feel materially different" turned out to be a real,
+confirmed bug, not a design/tuning question — found by measuring, not by
+guessing. `biomeField()`/`biomeId()` (`world/biomes.ts` / `shaders.ts`)
+share "the same hash and noise... in GLSL and here" by design (the file's
+own header comment), built on a classic `fract(sin(dot(p, big_vec)) *
+43758.5453123)` lattice hash. That hash has no cross-platform precision
+guarantee — WebGL/OpenGL never promise `sin()` agrees bit-for-bit between
+GPU and CPU, or even between two GPUs — and it was actually diverging:
+stood in a spot both the CPU (HUD, gameplay logic) and the shader's own
+`uBiomeSeed`/`uBiomeScale`/`uBiomeCount` (verified byte-identical to their
+TS counterparts first, ruling out a sync bug) agreed was biome id 8, Root
+Cellar — a STRICTLY grayscale ramp (`#0a0a0a`/`#3a3a3a`/`#8a8a8a`, R=G=B at
+every stop) — and read back the actual rendered pixel via `gl.readPixels`:
+clearly non-grayscale (blue, then reddish-brown at other confirmed Root
+Cellar spots), which is categorically impossible from a grayscale ramp at
+ANY lighting level, no confound available to explain it away. Sampled
+several more confirmed-Root-Cellar spots: a genuinely mixed pattern (some
+correct, some wrong) rather than a clean systematic offset — the signature
+of a floating-point precision issue, not a logic/off-by-one bug.
+
+Fixed by replacing the hash itself with integer bit-mixing (a MurmurHash3-
+style finalizer: XOR/shift/multiply on `uint`/`Math.imul`, no transcendental
+functions at all) in BOTH `world/biomes.ts` and every `hash21` in
+`shaders.ts` (`TOON_FRAGMENT` and the ceiling's separate `vnoise2`/
+`biomeId` copy) — exact and deterministic on both sides by the IEEE 754
+and GLSL specs, unlike `sin()`. This reshuffles which world coordinates
+land in which biome for a given seed (expected and harmless — a seed was
+never a promise the noise field's *specific* shape stays pinned across an
+unrelated internal change, only that it's deterministic going forward) but
+Dungeon/Glacier/etc.'s pen and ramp data are untouched. `hash21` is also
+used directly (not through `vnoise`) for the toon fragment's stipple
+dither — same fix applies there for the same reason, a cosmetic pattern
+change at most. Verified by re-running the exact same `gl.readPixels`
+check against freshly-confirmed Root Cellar spots under the new hash: 3 of
+5 read cleanly grayscale (`132,132,133` / `55,55,55` / `55,55,55`), the
+other 2 read as unprinted bare paper (a different, expected, non-bug case
+— the reticle just hadn't lit that exact spot yet) rather than a wrong
+color — no further mismatches found. Screenshotted Root Cellar reading
+correctly ash-grey against a neighbouring biome's colour for contrast.
+Typecheck clean; pushed to `origin/main` and republished.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

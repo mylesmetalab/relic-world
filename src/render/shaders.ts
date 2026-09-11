@@ -203,8 +203,24 @@ varying vec3 vPosW;
 varying float vLocalY;
 varying float vDepth;
 
+// Lattice hash: integer bit-mixing (MurmurHash3's finalizer), not the usual
+// sin()-based hash -- see the matching comment on hash21 in world/biomes.ts
+// for why: a sin(huge dot product) hash has no cross-platform precision
+// guarantee, and this was confirmed diverging from the CPU-side biome
+// classification in practice (a spot both sides agreed was biome id 8, a
+// strictly grayscale ramp, rendered visibly blue). Integer XOR/shift/
+// multiply is exact and deterministic on both sides.
+uint hashU32(uint x) {
+  x ^= x >> 16u;
+  x *= 0x7feb352du;
+  x ^= x >> 15u;
+  x *= 0x846ca68bu;
+  x ^= x >> 16u;
+  return x;
+}
 float hash21(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+  uint h = hashU32(hashU32(uint(int(p.x))) + uint(int(p.y)));
+  return float(h) / 4294967296.0;
 }
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -641,8 +657,24 @@ varying vec3 vPosE;
 float vhash(vec3 p) {
   return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
 }
+// Lattice hash: integer bit-mixing (MurmurHash3's finalizer), not the usual
+// sin()-based hash -- see the matching comment on hash21 in world/biomes.ts
+// for why: a sin(huge dot product) hash has no cross-platform precision
+// guarantee, and this was confirmed diverging from the CPU-side biome
+// classification in practice (a spot both sides agreed was biome id 8, a
+// strictly grayscale ramp, rendered visibly blue). Integer XOR/shift/
+// multiply is exact and deterministic on both sides.
+uint hashU32(uint x) {
+  x ^= x >> 16u;
+  x *= 0x7feb352du;
+  x ^= x >> 15u;
+  x *= 0x846ca68bu;
+  x ^= x >> 16u;
+  return x;
+}
 float hash21(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+  uint h = hashU32(hashU32(uint(int(p.x))) + uint(int(p.y)));
+  return float(h) / 4294967296.0;
 }
 float vnoise2(vec2 p) {
   vec2 i = floor(p), f = fract(p);

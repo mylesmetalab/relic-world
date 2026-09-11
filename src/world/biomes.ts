@@ -77,9 +77,28 @@ export function biomeScale(): number {
 }
 
 // ── The GLSL noise, ported byte-for-byte in intent ──────────────────────
-function fract(x: number): number { return x - Math.floor(x); }
+// Lattice hash: integer bit-mixing (MurmurHash3's finalizer), not a
+// sin()-based hash. A `sin(huge_dot_product)` hash has no cross-platform
+// precision guarantee -- WebGL/OpenGL never promise trig functions agree
+// bit-for-bit between GPU and CPU (or even between two GPUs), and this was
+// confirmed diverging in practice: standing in a spot both this function
+// and the GPU agreed was biome id 8 (Root Cellar, a strictly grayscale
+// ramp), the rendered rock came out visibly blue -- something only
+// possible if the GPU's own `biomeId()` computed a different id than this
+// one did for the identical input. Integer XOR/shift/multiply is exact
+// and deterministic on both sides, by IEEE 754 and the GLSL spec alike.
+function hashU32(x: number): number {
+  x >>>= 0;
+  x ^= x >>> 16;
+  x = Math.imul(x, 0x7feb352d) >>> 0;
+  x ^= x >>> 15;
+  x = Math.imul(x, 0x846ca68b) >>> 0;
+  x ^= x >>> 16;
+  return x >>> 0;
+}
 function hash21(x: number, y: number): number {
-  return fract(Math.sin(x * 127.1 + y * 311.7) * 43758.5453123);
+  const h = hashU32((hashU32(x >>> 0) + (y >>> 0)) >>> 0);
+  return h / 4294967296;
 }
 function vnoise(x: number, y: number): number {
   const ix = Math.floor(x), iy = Math.floor(y);
