@@ -24,7 +24,7 @@ Click to take the mouse.
 | **C** / **⇧C** | change character — nine things the cave grew: Cairn, Shard, Menhir, Spire, Dolmen, Castle, Totem, Wisp, Hound (the STL miniatures Bast, Rook and Cam join the cast via a toggle in the tuning panel) |
 | **Q / E** | your figure's ink colorway |
 | **F** / **click** | grab the prop — or the player — under the cursor (both get the same white outline, the cursor fills in) · throw along your aim — the dashed arc and landing ring show exactly where a prop goes · with empty hands, click **digs** |
-| **X** / **G** | plant a torch that lights and prints the rock around it · spawn a relic in front of you |
+| **H** / **X** / **G** | hold a torch — a real, deliberate light source, fixed reach day or night, distinct from your own always-on passive glow · plant a torch that lights and prints the rock around it · spawn a relic in front of you |
 | **B** | hop to a different biome — teleports to the nearest point in the next biome in sequence (also a button in the tuning panel) |
 | **Tab** | the paper map — the ink map itself, printed in as you explore, with players as dots |
 | **Enter** | chat — what you type streams above your figure as you type; Enter sends, Esc cancels |
@@ -175,9 +175,20 @@ same as always.
   surface itself reads duskier as night falls (still bare
   paper, just a darker sheet of it — no skyline). The tuning panel's Time
   phase buttons (Auto / Day / Dusk / Night) freeze the cycle at any phase so
-  you can look at — and tune — exactly one of them; `nightIntensity` is a
-  safety valve that fully disables the darkening at 0. The paper map (Tab)
-  is untouched either way — it always shows your full inked history.
+  you can look at — and tune — exactly one of them, and every other night
+  number (`dayNightCycleSec`, `nightIntensity`, `nightPersonalReach`,
+  `heldTorchReach`) now lives in its own **night** section of the panel
+  instead of buried in `world`. `nightIntensity` is a safety valve that
+  fully disables the darkening at 0. The paper map (Tab) is untouched either
+  way — it always shows your full inked history.
+- **H holds a real torch.** Your character always gives off a small passive
+  glow (`nightPersonalReach`) just by existing — otherwise night would be
+  unplayable pitch black before you could even see to plant one. **H**
+  equips an actual torch in hand: a fixed, deliberate reach
+  (`heldTorchReach`) that doesn't shrink at night the way the passive glow
+  does, the same as a planted one (X) or a standing one already does.
+  Equipping it is a real choice that changes how far you can see, not a
+  bigger version of the ambient bubble you always have anyway.
 
 ## How it's built
 

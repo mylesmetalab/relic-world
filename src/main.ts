@@ -351,6 +351,15 @@ async function boot(): Promise<void> {
   let propSnapT = 0;
   let torchSendT = 0;
 
+  // ── Held torch (H): a real, deliberate light source distinct from the
+  // passive personal glow every player always has — see CFG.night.heldTorchReach.
+  // One mesh, reused for the whole session; toggled visible/invisible and
+  // repositioned every frame rather than added/removed from the scene. ────
+  let torchOut = false;
+  const heldTorch = chunks.props.makeHeldTorch();
+  heldTorch.visible = false;
+  p.scene.add(heldTorch);
+
   net.setSource(() => ({
     p: [player.position.x, player.position.y, player.position.z],
     f: figure.group.rotation.y,
@@ -629,6 +638,7 @@ async function boot(): Promise<void> {
           grab.grabOrDrop(player.velocity);
         }
       }
+      if (input.once("KeyH")) torchOut = !torchOut;
       if (input.once("KeyX")) {
         const mine = chunks.props.placedTorches().filter((t) => t.id.startsWith(net.selfId));
         if (mine.length >= MAX_PLACED_TORCHES) chunks.props.removeTorch(mine[0]!.id);
@@ -753,6 +763,14 @@ async function boot(): Promise<void> {
     grab.render(chest, throwDir, player.velocity);
     holdPoint.copy(chest).addScaledVector(fwd, 1.3);
     holdPoint.y += 0.3;
+    // Held torch (H): out to one side and slightly forward, like carried in
+    // a hand — not dead ahead, so it never blocks the aim/dig crosshair.
+    heldTorch.visible = torchOut && !photo.active;
+    if (heldTorch.visible) {
+      heldTorch.position.copy(chest).addScaledVector(rgt, 0.45).addScaledVector(fwd, 0.25);
+      heldTorch.position.y -= 0.15;
+      heldTorch.rotation.set(0, Math.atan2(fwd.x, fwd.z), 0.05);
+    }
     // A player under the cursor, within reach, is grabbable too.
     targetPlayer = null;
     if (!grab.held && !carrying) {
@@ -782,7 +800,7 @@ async function boot(): Promise<void> {
     // waiting for the cycle. nightIntensity is a safety valve: 0 disables
     // the darkening entirely regardless of phase. Computed here (before the
     // torches below) because a player's own passive light also needs it. ──
-    const N = CFG.world;
+    const N = CFG.night;
     let nightAmt: number;
     if (N.timePhase === "day") nightAmt = 0;
     else if (N.timePhase === "dusk") nightAmt = 0.5;
@@ -812,6 +830,9 @@ async function boot(): Promise<void> {
     // which shrink (they use their own fixed `reach`, not this one).
     const personalReach = THREE.MathUtils.lerp(CFG.light.localReach + reachBonus, N.nightPersonalReach, nightAmt);
     p.torches.push({ position: torchPos, reach: personalReach });
+    // A held torch (H) is a real light like any placed one: fixed reach,
+    // untouched by the night shrink above.
+    if (torchOut && !photo.active) p.torches.push({ position: heldTorch.position, reach: N.heldTorchReach });
     const fresh = p.inkMap.stamp(player.position.x, player.position.z, CFG.light.inkStamp + reachBonus * 0.6);
     sound.print(fresh, dt);
 

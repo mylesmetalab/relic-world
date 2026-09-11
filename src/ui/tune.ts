@@ -15,7 +15,8 @@ import type { Input } from "../player/input";
 type Range = [number, number, number]; // min, max, step
 
 const RANGES: Record<keyof Tunables, Record<string, Range>> = {
-  world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], climbSolidity: [0.3, 0.98, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1], crust: [1, 24, 0.5], vaultRadius: [1.2, 5, 0.1], vaultRing: [0.4, 2.5, 0.1], vaultTorchRange: [1, 8, 0.5], propUpperDensity: [0, 1, 0.05], torchLifeSec: [10, 600, 5], presenceEnabled: [0, 1, 1], biomeHopRadius: [50, 1000, 10], dayNightCycleSec: [60, 3600, 30], nightIntensity: [0, 1, 0.05], nightPersonalReach: [1, 20, 0.5] },
+  world: { floorBase: [0, 8, 0.1], ceilBase: [6, 40, 0.5], wallLo: [0.3, 0.9, 0.01], wallHi: [0.3, 0.95, 0.01], climbSolidity: [0.3, 0.98, 0.01], biomeScale: [30, 300, 5], dunes: [8, 80, 1], chop: [2, 20, 0.5], ceilRelief: [0, 12, 0.1], crust: [1, 24, 0.5], vaultRadius: [1.2, 5, 0.1], vaultRing: [0.4, 2.5, 0.1], vaultTorchRange: [1, 8, 0.5], propUpperDensity: [0, 1, 0.05], torchLifeSec: [10, 600, 5], presenceEnabled: [0, 1, 1], biomeHopRadius: [50, 1000, 10] },
+  night: { dayNightCycleSec: [60, 3600, 30], nightIntensity: [0, 1, 0.05], nightPersonalReach: [1, 20, 0.5], heldTorchReach: [4, 40, 1] },
   light: { localReach: [8, 80, 1], remoteReach: [4, 60, 1], inkStamp: [4, 60, 1], fogNear: [2, 80, 1], fogFar: [10, 200, 1], fog: [0, 1, 0.01], fogTone: [0, 1, 0.01], mottle: [0, 1, 0.01], shadowGamma: [0.4, 3, 0.05], ceilCell: [6, 80, 1], ceilArcSpacing: [0.4, 6, 0.1] },
   press: { printScale: [0.2, 1, 0.05], misreg: [0, 3, 0.1], edgeW: [0.5, 3, 0.1], depthCut: [0.002, 0.05, 0.001], normalCut: [0.1, 1, 0.01], grain: [0, 1, 0.01], speck: [0, 0.02, 0.0005], halftone: [0, 1, 0.01], halftoneScale: [2, 24, 0.5], halftoneAngle: [0, 90, 1], depthStrange: [0, 2, 0.05], shadowLift: [0, 1, 0.05] },
   dig: { radius: [0.6, 5, 0.1], depth: [0.1, 4, 0.05], tunnelRadius: [0.8, 6, 0.1], rate: [1, 20, 1], reach: [2, 12, 0.5], stepUp: [0.8, 2.2, 0.1] },
@@ -37,6 +38,7 @@ const GROUND_RANGES: Record<string, Range> = { terrace: [0, 3, 0.1], relief: [0.
 // only). Everything else takes effect live, next frame.
 const SECTION_DESC: Record<keyof Tunables, string> = {
   world: "Terrain shape and world rules — most of these need Rebuild world to see.",
+  night: "Day/night cycle timing and how dark night actually gets — see the phase buttons above for locking one phase to tune against.",
   light: "How far light reaches, and the fog/mottle/shadow look.",
   press: "The print pass: ink line detection, paper texture, halftone, speckle — applied to the whole frame, not per-object.",
   dig: "How digging behaves — size, speed, reach.",
@@ -64,9 +66,12 @@ const DESCRIPTIONS: Record<keyof Tunables, Record<string, string>> = {
     torchLifeSec: "How long a torch YOU place (X) burns before it goes dark and vanishes, in seconds. World/shrine torches never expire regardless of this.",
     presenceEnabled: "Turns the wandering presence on/off. It only ever exists in private (?seed=) worlds regardless of this switch — it's an extra kill switch on top of that.",
     biomeHopRadius: "Max search distance (metres) for hopping to another biome (B / the button below). Too small and a far biome just won't be found — you'll get a 'none nearby' message instead of a long hang.",
-    dayNightCycleSec: "How long a full day→night→day cycle takes, in seconds, in Auto phase. Ignored when a phase is locked (Day/Dusk/Night below).",
+  },
+  night: {
+    dayNightCycleSec: "How long a full day→night→day cycle takes, in seconds, in Auto phase. Ignored when a phase is locked (Day/Dusk/Night above).",
     nightIntensity: "Safety valve for the whole night-darkening effect: 0 disables it completely (looks like day at any phase); 1 is the full tuned strength.",
-    nightPersonalReach: "How far YOUR own carried light reaches at full night (1.0 phase) — day's much bigger reach (see light.localReach) shrinks toward this as night falls. Small values make night feel genuinely dark; large values make night barely different from day.",
+    nightPersonalReach: "How far YOUR own passive carried light reaches at full night (1.0 phase) — day's much bigger reach (see light.localReach) shrinks toward this as night falls. Small values make night feel genuinely dark; large values make night barely different from day.",
+    heldTorchReach: "How far the equippable held torch (H) reaches — fixed, day or night, like a placed torch. On top of nightPersonalReach: this is the deliberate light you get FROM choosing to hold a torch, not the passive glow you always have anyway.",
   },
   light: {
     localReach: "How far your own carried torch lights and permanently inks the rock around you, in metres. Higher = see and print further without placing a torch. Shrinks toward nightPersonalReach at night.",
@@ -240,7 +245,7 @@ export class Tune {
     // against exactly one phase without waiting for the cycle.
     q<HTMLDivElement>("phaseButtons").querySelectorAll<HTMLButtonElement>("button[data-phase]").forEach((b) => {
       b.addEventListener("click", () => {
-        CFG.world.timePhase = b.dataset.phase as Tunables["world"]["timePhase"];
+        CFG.night.timePhase = b.dataset.phase as Tunables["night"]["timePhase"];
         this.refreshPhaseButtons();
         this.say(`time phase: ${b.dataset.phase}`);
       });
@@ -267,7 +272,7 @@ export class Tune {
     this.panel.hidden = !this.open;
     if (this.open) {
       this.refreshSchemeOut();
-      this.refreshPhaseButtons(); // CFG.world.timePhase can change from outside the panel (?cfg=, the console)
+      this.refreshPhaseButtons(); // CFG.night.timePhase can change from outside the panel (?cfg=, the console)
     }
   }
 
@@ -278,12 +283,12 @@ export class Tune {
     if (out) out.textContent = this.input.controlScheme === "auto" ? `→ ${this.input.resolvedDevice()}` : "";
   }
 
-  /** Highlight whichever phase button matches `CFG.world.timePhase` — called
+  /** Highlight whichever phase button matches `CFG.night.timePhase` — called
    *  on click, and again after Import/Reset can change it from under the UI. */
   private refreshPhaseButtons(): void {
     const host = this.panel.querySelector<HTMLDivElement>('[data-k="phaseButtons"]');
     host?.querySelectorAll<HTMLButtonElement>("button[data-phase]").forEach((b) => {
-      b.classList.toggle("on", b.dataset.phase === CFG.world.timePhase);
+      b.classList.toggle("on", b.dataset.phase === CFG.night.timePhase);
     });
   }
 

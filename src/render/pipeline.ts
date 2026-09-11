@@ -413,7 +413,7 @@ export function setDepth(p: Pipeline, depth: number): void {
 /** 0 (day, byte-for-byte today's rendering) .. 1 (night — only a torch
  *  actually burning THIS frame keeps a spot printed; the permanent ink-map
  *  history alone no longer counts). Inherently dynamic — changes every
- *  frame from the clock or the phase lock (`CFG.world.timePhase`) — so it's
+ *  frame from the clock or the phase lock (`CFG.night.timePhase`) — so it's
  *  called unconditionally every frame from main.ts, the same `setDepth`-
  *  style pattern rather than something routed through `applyConfig`. */
 export function setNight(p: Pipeline, amt: number): void {

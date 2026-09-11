@@ -1340,6 +1340,44 @@ lowest) both show density that visibly varies with the rock's shadowed
 pockets versus its flatter faces, not a uniform wash. Typecheck clean;
 pushed to `origin/main` and republished.
 
+### Fortieth pass (2026-09-11): a separate Night section in the tuner, and H holds a real torch
+Two asks after the night-sketch fix landed. First: Myles asked "what do you
+mean torch radius? i dont have a torch put down... i guess [my character]
+just omit[s] light... otherwise the screen would be black" — correctly
+worked out on his own that the always-on passive glow (`nightPersonalReach`)
+is a deliberate gameplay concession (unplayable pitch black otherwise), not
+a simulated light source. That surfaced the real gap: there was no way to
+have an actual torch without either standing next to a planted one (X) or
+never leaving the passive bubble's reach. Second: separate sliders for
+night-time settings, since they were mixed into the `world` section.
+
+`dayNightCycleSec`, `nightIntensity`, `nightPersonalReach` moved out of
+`CFG.world` into a new `CFG.night` (`world/config.ts`), including
+`timePhase` (still not a slider — same custom button-row control as
+before, just re-pointed at `night`). `loadConfig`'s discrete-string special
+case moved with it. The tuning panel (`ui/tune.ts`) now renders a `night`
+`<details>` section the same way every other CFG section already does —
+no bespoke UI needed, just moving which section owns the keys.
+
+For the actual held torch: added `CFG.night.heldTorchReach` (a NEW value,
+not moved) — fixed reach, day or night, deliberately NOT lerped toward
+`nightPersonalReach` like the passive glow is, matching how a planted
+torch's own `reach` (`TORCH_REACH`) already ignores the night shrink. H
+toggles it. `Props.makeHeldTorch()` (`world/props.ts`) exposes the existing
+private `torchMesh()` builder for this — one mesh, created once and reused
+(toggled `.visible`, not added/removed from the scene), deliberately NOT
+registered in `Props`' own `torches` map: it gets no id, no life countdown,
+no network sync, unlike a planted one. `main.ts` positions it each frame
+out to the character's side and slightly forward (`chest + rgt*0.45 +
+fwd*0.25`) — clear of the aim/dig crosshair — and, while out, pushes its
+own `{ position, reach: heldTorchReach }` into the per-frame light list
+right alongside the personal-glow entry, so it counts as a real light
+regardless of the standing-torches cap. Verified in-browser: toggling H
+adds/removes a visible torch mesh and a second, larger-reach entry in the
+per-frame torch list; the night section's sliders and phase buttons still
+work after the config move. Typecheck clean; pushed to `origin/main` and
+republished.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

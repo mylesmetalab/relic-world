@@ -193,6 +193,15 @@ export class Props {
     return g;
   }
 
+  /** A torch mesh for the player's own hand (H), visually identical to a
+   *  placed one — but not registered in `torches`: it gets no id, no life
+   *  countdown, and no network sync. main.ts owns its position and
+   *  visibility every frame instead, the same way it already owns a carried
+   *  prop's hold point. */
+  makeHeldTorch(): THREE.Group {
+    return this.torchMesh();
+  }
+
   /** Add a torch (shrine or placed). Idempotent by id. */
   addTorch(id: string, x: number, y: number, z: number, placed: boolean): TorchProp {
     const existing = this.torches.get(id);

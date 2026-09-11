@@ -47,6 +47,8 @@ export type Tunables = {
      *  so a seed with a missing/far biome fails gracefully instead of
      *  hanging the search. */
     biomeHopRadius: number;
+  };
+  night: {
     /** Night mode's phase lock (Myles's explicit ask): "auto" runs the real
      *  day/night clock (`dayNightCycleSec`); "day"/"dusk"/"night" freeze
      *  `uNight` at a fixed value (0 / 0.5 / 1) every frame regardless of
@@ -72,6 +74,15 @@ export type Tunables = {
      *  `reach` field, not `light.localReach`) — they're the reliable light
      *  the whole point of night mode is to make you depend on. */
     nightPersonalReach: number;
+    /** Reach of the equippable HELD torch (H), while it's out. Fixed, like
+     *  a placed torch's own `reach` (`TORCH_REACH`) — it doesn't shrink at
+     *  night the way `nightPersonalReach` does, since a real held torch
+     *  burning is a real held torch burning regardless of the hour. That's
+     *  the point of it: separate from the passive glow every player always
+     *  has (torch or not), equipping one is a deliberate, visible choice
+     *  that actually changes how far you can see, not a bigger version of
+     *  the same ambient bubble. */
+    heldTorchReach: number;
   };
   light: {
     localReach: number;
@@ -198,7 +209,8 @@ export type Tunables = {
 };
 
 export const DEFAULTS: Tunables = {
-  world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, climbSolidity: 0.85, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4, crust: 6, vaultRadius: 2.4, vaultRing: 1.0, vaultTorchRange: 3, propUpperDensity: 0.4, torchLifeSec: 180, presenceEnabled: 1, biomeHopRadius: 400, timePhase: "auto", dayNightCycleSec: 60, nightIntensity: 1, nightPersonalReach: 5 },
+  world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, climbSolidity: 0.85, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4, crust: 6, vaultRadius: 2.4, vaultRing: 1.0, vaultTorchRange: 3, propUpperDensity: 0.4, torchLifeSec: 180, presenceEnabled: 1, biomeHopRadius: 400 },
+  night: { timePhase: "auto", dayNightCycleSec: 60, nightIntensity: 1, nightPersonalReach: 5, heldTorchReach: 16 },
   light: { localReach: 34, remoteReach: 22, inkStamp: 26, fogNear: 14, fogFar: 70, fog: 0.5, fogTone: 0.4, mottle: 0.3, shadowGamma: 1.25, ceilCell: 26, ceilArcSpacing: 1.6 },
   press: { printScale: 0.6, misreg: 0.6, edgeW: 1.0, depthCut: 0.012, normalCut: 0.5, grain: 0.9, speck: 0.004, halftone: 0, halftoneScale: 4, halftoneAngle: 20, depthStrange: 1, shadowLift: 0 },
   dig: { radius: 1.2, depth: 0.3, tunnelRadius: 1.2, rate: 5, reach: 4.5, stepUp: 1.3 },
@@ -216,7 +228,7 @@ function clone<T>(v: T): T {
 export const CFG: Tunables = clone(DEFAULTS);
 
 /** Deep-merge a partial config (from JSON or the URL) into CFG. Every field
- *  is a number except `world.timePhase` (a discrete string mode), which the
+ *  is a number except `night.timePhase` (a discrete string mode), which the
  *  generic numeric loop below skips and a separate check restores. */
 export function loadConfig(partial: unknown): void {
   if (!partial || typeof partial !== "object") return;
@@ -231,8 +243,8 @@ export function loadConfig(partial: unknown): void {
       if (typeof v === "number" && Number.isFinite(v)) to[k] = v;
     }
   }
-  const phase = (src.world as Record<string, unknown> | undefined)?.timePhase;
-  if (phase === "auto" || phase === "day" || phase === "dusk" || phase === "night") CFG.world.timePhase = phase;
+  const phase = (src.night as Record<string, unknown> | undefined)?.timePhase;
+  if (phase === "auto" || phase === "day" || phase === "dusk" || phase === "night") CFG.night.timePhase = phase;
 }
 
 export function resetConfig(): void {
