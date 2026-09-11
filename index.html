@@ -77,6 +77,28 @@
       #tune .tune-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       #tune .tune-row output { text-align: right; opacity: 0.85; }
       #tune select { width: 100%; }
+      /* Hover tooltip: what a slider/control does and what to expect moving
+         it — pure CSS (content: attr()), no JS needed per-hover. A slider's
+         [data-tip] lives on the WHOLE ROW (label/input/output), not the
+         label span alone — that span truncates long labels with
+         overflow:hidden, which would clip its own ::after tooltip right
+         along with the text; the dotted underline is a separate rule so it
+         still reads as "this word has a tooltip", not "this whole row does". */
+      #tune [data-tip] { cursor: help; position: relative; }
+      #tune .tune-row[data-tip] > span:first-child,
+      #tune label.tune-check[data-tip],
+      #tune summary[data-tip],
+      #tune span[data-tip] { border-bottom: 1px dotted rgba(232,228,208,0.55); }
+      #tune [data-tip]:hover::after {
+        content: attr(data-tip);
+        position: absolute; left: 0; top: 100%; margin-top: 4px; z-index: 30;
+        width: 230px; white-space: normal; text-overflow: clip;
+        background: #0a0a12; color: #e8e4d0; border: 1px solid rgba(232,228,208,0.45);
+        padding: 7px 9px; font: 11px/1.45 ui-monospace, Menlo, monospace;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.65);
+      }
+      #tune summary[data-tip] { border-bottom: none; }
+      #tune summary[data-tip]:hover::after { top: 1.5em; }
       #aim { position: fixed; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border: 2px solid #e8e4d0; border-radius: 50%; box-shadow: 0 0 0 1px rgba(10,10,18,0.7), inset 0 0 0 1px rgba(10,10,18,0.7); pointer-events: none; transition: transform 0.08s, background 0.08s; }
       #aim.hot { background: #e8e4d0; transform: scale(1.25); }
       #aim.hold { border-color: #f2f542; background: transparent; transform: scale(1.5); }

@@ -1113,6 +1113,42 @@ color — no further mismatches found. Screenshotted Root Cellar reading
 correctly ash-grey against a neighbouring biome's colour for contrast.
 Typecheck clean; pushed to `origin/main` and republished.
 
+### Thirty-third pass (2026-09-11): hover tooltips on every tune-panel control
+Myles asked for these before he'd try to describe what isn't landing about
+the shading — he can't yet tell what a given slider does or what to expect
+moving it, and with ~90 numbers across very different systems (world,
+light, press, dig, figure, player, controls, presence, plus per-biome pen/
+ground), that's a real usability gap, not a nice-to-have. Added a
+`DESCRIPTIONS`/`SECTION_DESC`/`PEN_DESCRIPTIONS`/`GROUND_DESCRIPTIONS` set
+in `src/ui/tune.ts` (mirroring `RANGES`' shape) — one real, specific
+sentence per control: what it does, and concretely what moving it up/down
+changes, not a restated label. Every section summary and every per-biome
+"cave colorway" selector got one too. Rendered as a pure-CSS hover tooltip
+(`content: attr(data-tip)` in `index.html`) — no JS per hover, so it can
+never fall out of sync with what's actually there.
+
+Hit a real, non-obvious CSS bug while verifying, not just wiring the
+attributes and calling it done: the FIRST version put `data-tip` on the
+inner label `<span>`, which already has `overflow: hidden` for text
+truncation — and `overflow: hidden` on an element clips its OWN `::after`
+pseudo-element too, `position: absolute` or not, since the pseudo-element
+is still logically a child of that same overflow box. Every slider's
+tooltip was silently invisible; only section summaries (no overflow rule)
+happened to work, which is what made it non-obvious at first — a screenshot
+of the FIRST hover test looked like success (a summary), and later
+attempts on real sliders quietly failed. Traced it by checking a forced
+(non-hover-dependent) class first to separate "does the box render at all"
+from "is :hover even being detected" — confirmed the box legitimately
+never rendered, not a hover-detection quirk. Fixed by moving `data-tip` to
+the whole row (the `<label class="tune-row">`, which has no overflow
+rule) instead of the truncated span inside it, with a separate CSS rule so
+only the label text gets the dotted-underline visual cue, not the whole
+row. Verified for real afterward: `document.querySelectorAll('#tune
+[data-tip]')` → 236 elements, zero tune-row missing one, and a real batched
+hover+screenshot on `printScale` (previously blank) now shows the full
+description box. Typecheck clean; pushed to `origin/main` and republished
+(a visible UI addition).
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
