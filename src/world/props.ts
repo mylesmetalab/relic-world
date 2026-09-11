@@ -137,7 +137,7 @@ export class Props {
       const geo = rockGeometry(rng, radius, height);
       const y = this.terrain.levelAt(level, x, z) + height / 2 + 0.05;
       const prop = this.makeDynamic(id, geo, (geo.attributes.position as THREE.BufferAttribute).array as Float32Array, x, y, z, rng() * Math.PI * 2, this.p.rockMat, ROCK_DENSITY);
-      anchorHatch(this.p, prop.mesh as THREE.Mesh, (rng() - 0.5) * 1.4);
+      anchorHatch(this.p, prop.mesh as THREE.Mesh, (rng() - 0.5) * 1.4, { x, z });
       cp.props.push(prop);
     }
     // A shrine: a standing torch that lights its room, in about one chunk in five (scaled).
@@ -375,7 +375,7 @@ export class Props {
       id, geo, (geo.attributes.position as THREE.BufferAttribute).array as Float32Array,
       site.x, y, site.z, site.yaw, this.p.rockMat, BOULDER_DENSITY,
     );
-    anchorHatch(this.p, prop.mesh as THREE.Mesh, (rng() - 0.5) * 1.4);
+    anchorHatch(this.p, prop.mesh as THREE.Mesh, (rng() - 0.5) * 1.4, { x: site.x, z: site.z });
     cp.props.push(prop);
   }
 

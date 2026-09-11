@@ -63,6 +63,15 @@ export type Tunables = {
      *  regardless of phase) via `?cfg=`, without a redeploy, in case the
      *  shared-world default turns out too harsh. 1 is the tuned strength. */
     nightIntensity: number;
+    /** The reach of a player's own PASSIVE carried light (`light.localReach`/
+     *  `remoteReach`, ~20-30 m by design, for daytime clarity) shrinks
+     *  toward this much smaller radius as night falls — without this, night
+     *  looked identical to day near any player, since their own always-on
+     *  personal light bubble was bigger than most rooms. Placed torches,
+     *  vault pillars and world braziers are untouched by this (their own
+     *  `reach` field, not `light.localReach`) — they're the reliable light
+     *  the whole point of night mode is to make you depend on. */
+    nightPersonalReach: number;
   };
   light: {
     localReach: number;
@@ -189,7 +198,7 @@ export type Tunables = {
 };
 
 export const DEFAULTS: Tunables = {
-  world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, climbSolidity: 0.85, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4, crust: 6, vaultRadius: 2.4, vaultRing: 1.0, vaultTorchRange: 3, propUpperDensity: 0.4, torchLifeSec: 180, presenceEnabled: 1, biomeHopRadius: 400, timePhase: "auto", dayNightCycleSec: 600, nightIntensity: 1 },
+  world: { floorBase: 3.0, ceilBase: 11.5, wallLo: 0.56, wallHi: 0.66, climbSolidity: 0.85, biomeScale: 90, dunes: 26, chop: 5.5, ceilRelief: 3.4, crust: 6, vaultRadius: 2.4, vaultRing: 1.0, vaultTorchRange: 3, propUpperDensity: 0.4, torchLifeSec: 180, presenceEnabled: 1, biomeHopRadius: 400, timePhase: "auto", dayNightCycleSec: 600, nightIntensity: 1, nightPersonalReach: 5 },
   light: { localReach: 34, remoteReach: 22, inkStamp: 26, fogNear: 14, fogFar: 70, fog: 0.5, fogTone: 0.4, mottle: 0.3, shadowGamma: 1.25, ceilCell: 26, ceilArcSpacing: 1.6 },
   press: { printScale: 0.6, misreg: 0.6, edgeW: 1.0, depthCut: 0.012, normalCut: 0.5, grain: 0.9, speck: 0.004, halftone: 0, halftoneScale: 4, halftoneAngle: 20, depthStrange: 1, shadowLift: 0 },
   dig: { radius: 1.2, depth: 0.3, tunnelRadius: 1.2, rate: 5, reach: 4.5, stepUp: 1.3 },

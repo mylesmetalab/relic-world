@@ -1014,6 +1014,63 @@ torch's thin stake for the visual contrast the brief asked for. No scope
 cuts — the whole brief shipped, phase-lock/tuning-export included, per
 Myles's explicit ask that piece not be skipped.
 
+### Thirty-first pass (2026-09-11): night wasn't actually dark, a carried rock changed colour
+Two real bugs, both found by Myles actually playing right after night mode
+shipped, not guessed at.
+
+- **Night mode's own darkening was real but invisible near a player**,
+  because a player's PASSIVE carried light (`light.localReach`, up to ~34m
+  with relics — generous by day, for comfortable visibility) was never
+  reduced at night; it's a separate signal from placed/world torches, which
+  DO keep their reach. Since that bubble is bigger than most rooms, and
+  it's always on regardless of phase, night looked like day everywhere a
+  player actually stood — the far-away darkening the shader genuinely
+  produces was real (confirmed in the prior pass by reading back rendered
+  pixel colour at a distant point) but never where anyone would notice.
+  Fixed: a new `world.nightPersonalReach` (default 5m) that
+  `light.localReach`/`remoteReach` (mine and every remote player's own
+  passive light) shrink toward as `nightAmt` rises — moved the whole
+  `nightAmt` computation earlier in `main.ts`'s frame function so it's
+  available where the torch list is built, not just at `setNight`. Placed
+  torches, vault pillars and world braziers are untouched (their own fixed
+  `reach` field, never `light.localReach`) — they're the point of the
+  feature, the reliable light you have to actually place or find.
+- **A carried/pushed rock changed colour walking between biomes.** Shards
+  and boulders share `rockMat` with the terrain, which sensibly samples
+  biome BY WORLD POSITION so the ground reads consistently with its
+  surroundings — but the same live-position sample meant a prop's colour
+  followed it wherever it currently was, recolouring visibly as Myles
+  carried one across a biome boundary. Fixed with a frozen per-mesh biome
+  anchor (`uUseBiomeAnchor`/`uBiomeAnchor` in `shaders.ts`/`pipeline.ts`,
+  set via `anchorHatch`'s existing per-draw uniform-mutation pattern,
+  passed at spawn time in `props.ts` for shards and boulders — their spawn
+  point, frozen for life) — the terrain's own per-mesh anchors and every
+  instanced rock batch are untouched (instanced rocks are real terrain that
+  never moves, and explicitly skip the anchor uniform in the shader so they
+  can never inherit a stale value from sharing `rockMat`'s uniforms object
+  with `rockMatInstanced`). Verified directly at the render level, not by
+  eye: grabbed a real shard (spawn point 19.2, 2.5), carried it through a
+  biome hop to Crystal Vein (actual body position 3.85, 2.44), forced its
+  real `onBeforeRender` callback and read back the live material uniforms —
+  `uUseBiomeAnchor: 1`, `uBiomeAnchor: [19.36, 2.23]`, matching its spawn
+  point exactly, not its current one. Golem relics were never affected —
+  they already use their own dedicated material (`makeFigureMaterial`),
+  not the shared `rockMat`.
+- Also investigated, not a bug: a screenshot of what looked like "a hole in
+  the roof" showing an oddly plain blue/black swirl. That's the ceiling
+  material rendering as designed — `ceilMat` is a deliberately different,
+  unlit "brush arc" shader from the walls' crosshatched toon shading (see
+  "Architecture" above), so a tall cavern ceiling seen from a distance
+  reads in a visibly different style than nearby rock; the speckle is the
+  universal print-grain applied across the whole frame, not specific to the
+  ceiling. Confirmed by reproducing a similar steep-up view rather than
+  asserting it. Still a fair design concern raised alongside it — Myles
+  wants to revisit the overall shading/shader system's legibility (what
+  each tune-panel number actually does) and hover tooltips on every slider;
+  that's a separate, larger pass, not started yet in this one.
+- Typecheck clean throughout; both fixes pushed to `origin/main` and
+  republished (both are visible rendering changes).
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

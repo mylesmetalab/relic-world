@@ -772,6 +772,29 @@ async function boot(): Promise<void> {
     digMark.show(canDig ? planDig()?.plan ?? null : null);
     digMark.update(dt);
 
+    // ── Night mode (brief 20): 0 = day (today's rendering, byte-for-byte);
+    // 1 = night — only a torch actually burning THIS frame keeps a spot
+    // printed, the permanent ink-map history alone no longer counts.
+    // "auto" derives the phase from the session clock (p.time, already
+    // accumulated for uTime); the phase-lock buttons in the tune panel
+    // freeze it so a look can be tuned against exactly one phase without
+    // waiting for the cycle. nightIntensity is a safety valve: 0 disables
+    // the darkening entirely regardless of phase. Computed here (before the
+    // torches below) because a player's own passive light also needs it. ──
+    const N = CFG.world;
+    let nightAmt: number;
+    if (N.timePhase === "day") nightAmt = 0;
+    else if (N.timePhase === "dusk") nightAmt = 0.5;
+    else if (N.timePhase === "night") nightAmt = 1;
+    else {
+      const cyc = Math.max(1, N.dayNightCycleSec);
+      const t = (p.time % cyc) / cyc;
+      // Smooth day→night→day: one cosine lobe over the cycle, 0 at t=0
+      // (noon) rising to 1 at t=0.5 (midnight) and back — no hard cut.
+      nightAmt = (1 - Math.cos(t * Math.PI * 2)) * 0.5;
+    }
+    nightAmt *= N.nightIntensity;
+
     // ── Torches: mine rides upper-left of the lens; then peers; then the
     // nearest standing torches, up to the shader's cap ──────────────────
     torchPos.copy(rgt).multiplyScalar(-3.5).addScaledVector(fwd, -1);
@@ -779,7 +802,15 @@ async function boot(): Promise<void> {
     torchPos.y += 2.2;
     const reachBonus = Math.min(12, relics * 1.5);
     p.torches.length = 0;
-    p.torches.push({ position: torchPos, reach: CFG.light.localReach + reachBonus });
+    // A player's OWN passive/carried light — big by day for comfortable
+    // visibility (up to ~46 m with relics), but that same bubble used to
+    // swallow night mode entirely: it's always-on and bigger than most
+    // rooms, so nothing near a player ever looked dark. At night it shrinks
+    // toward `nightPersonalReach` (a few metres) — actual darkness now
+    // depends on a placed torch, a peer's torch, or a world brazier, none of
+    // which shrink (they use their own fixed `reach`, not this one).
+    const personalReach = THREE.MathUtils.lerp(CFG.light.localReach + reachBonus, N.nightPersonalReach, nightAmt);
+    p.torches.push({ position: torchPos, reach: personalReach });
     const fresh = p.inkMap.stamp(player.position.x, player.position.z, CFG.light.inkStamp + reachBonus * 0.6);
     sound.print(fresh, dt);
 
@@ -824,7 +855,7 @@ async function boot(): Promise<void> {
       if ((st.b ?? "") && !r.talking) sound.blip();
       r.talking = !!(st.b ?? "");
       if (r.figure.colorway !== st.i) r.figure.setColorway(st.i);
-      p.torches.push({ position: r.torch, reach: CFG.light.remoteReach });
+      p.torches.push({ position: r.torch, reach: THREE.MathUtils.lerp(CFG.light.remoteReach, N.nightPersonalReach, nightAmt) });
       p.inkMap.stamp(r.pos.x, r.pos.z, CFG.light.inkStamp * 0.7);
       peerPositions.set(id, r.pos);
     }
@@ -867,27 +898,6 @@ async function boot(): Promise<void> {
     voice.update(player.position, peerPositions);
     lastSpeed = speed;
 
-    // ── Night mode (brief 20): 0 = day (today's rendering, byte-for-byte);
-    // 1 = night — only a torch actually burning THIS frame keeps a spot
-    // printed, the permanent ink-map history alone no longer counts.
-    // "auto" derives the phase from the session clock (p.time, already
-    // accumulated for uTime); the phase-lock buttons in the tune panel
-    // freeze it so a look can be tuned against exactly one phase without
-    // waiting for the cycle. nightIntensity is a safety valve: 0 disables
-    // the darkening entirely regardless of phase. ───────────────────────
-    const N = CFG.world;
-    let nightAmt: number;
-    if (N.timePhase === "day") nightAmt = 0;
-    else if (N.timePhase === "dusk") nightAmt = 0.5;
-    else if (N.timePhase === "night") nightAmt = 1;
-    else {
-      const cyc = Math.max(1, N.dayNightCycleSec);
-      const t = (p.time % cyc) / cyc;
-      // Smooth day→night→day: one cosine lobe over the cycle, 0 at t=0
-      // (noon) rising to 1 at t=0.5 (midnight) and back — no hard cut.
-      nightAmt = (1 - Math.cos(t * Math.PI * 2)) * 0.5;
-    }
-    nightAmt *= N.nightIntensity;
     setNight(p, nightAmt);
 
     // The surface is the unprinted page: paper sky up top, ink black below.

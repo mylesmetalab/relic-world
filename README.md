@@ -160,7 +160,10 @@ same as always.
   night that permanence stops applying: a place you explored earlier goes
   dark again the moment nothing is actually lighting it right now, unless a
   torch — yours, a peer's, or a permanent shrine/brazier — is still standing
-  and burning there. Let a planted torch run out at night and its patch goes
+  and burning there. Your own carried light shrinks a lot at night too
+  (`nightPersonalReach`, a few metres by default) — it's a big, generous
+  bubble by day, and night looked like day everywhere a player stood until
+  that came down. Let a planted torch run out at night and its patch goes
   dark with it. The surface itself reads duskier as night falls (still bare
   paper, just a darker sheet of it — no skyline). The tuning panel's Time
   phase buttons (Auto / Day / Dusk / Night) freeze the cycle at any phase so

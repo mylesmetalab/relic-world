@@ -121,6 +121,8 @@ function makeToonMaterial(
       uBiomeScale: { value: biomeScale() },
       uBiomeSeed: { value: 0 },
       uUseBiomes: { value: useBiomes ? 1 : 0 },
+      uUseBiomeAnchor: { value: 0 },
+      uBiomeAnchor: { value: new THREE.Vector2(0, 0) },
       uPenA: { value: pens.a },
       uPenB: { value: pens.b },
       uAmbientColor: { value: new THREE.Color(0x6a3fb8) },
@@ -176,7 +178,7 @@ function makeToonMaterial(
  *  origin into print pixels and hand that (plus its own family angle) to the
  *  shared material. `uniformsNeedUpdate` forces the upload — three otherwise
  *  skips uniforms for consecutive draws of the same material. */
-export function anchorHatch(p: Pipeline, mesh: THREE.Mesh, seed: number): void {
+export function anchorHatch(p: Pipeline, mesh: THREE.Mesh, seed: number, biomeAnchor?: { x: number; z: number }): void {
   const v = new THREE.Vector3();
   mesh.onBeforeRender = (_r, _s, camera, _g, material) => {
     const m = material as THREE.ShaderMaterial;
@@ -185,6 +187,15 @@ export function anchorHatch(p: Pipeline, mesh: THREE.Mesh, seed: number): void {
     mesh.getWorldPosition(v).project(camera);
     u.uHatchPhase.value.set((v.x * 0.5 + 0.5) * p.printW, (v.y * 0.5 + 0.5) * p.printH);
     u.uHatchSeed.value = seed;
+    // A carried/pushed prop (shard, boulder) freezes its biome sample to
+    // where it spawned, so picking one up and walking it into a different
+    // biome doesn't visibly recolour it — every mesh sharing this material
+    // sets this explicitly each draw (not just when truthy), so one prop's
+    // anchor never leaks into the next mesh's draw call.
+    if (u.uUseBiomeAnchor) {
+      u.uUseBiomeAnchor.value = biomeAnchor ? 1 : 0;
+      if (biomeAnchor) u.uBiomeAnchor.value.set(biomeAnchor.x, biomeAnchor.z);
+    }
     m.uniformsNeedUpdate = true;
   };
 }

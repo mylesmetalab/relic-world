@@ -103,6 +103,11 @@ uniform float uBiomeCount;
 uniform float uBiomeScale;
 uniform float uBiomeSeed;
 uniform float uUseBiomes;
+// A carried/pushed prop's frozen biome-sample point (its spawn position) —
+// see the "Biome pen" block below for why this exists. Ignored (0) for
+// terrain and anything else that didn't ask for it via anchorHatch.
+uniform float uUseBiomeAnchor;
+uniform vec2 uBiomeAnchor;
 // Sized to BIOMES.length (src/world/biomes.ts) -- keep in sync, GLSL array
 // sizes are compile-time. A biome index past the end of these read out of
 // bounds (undefined per spec; observed as silently repeating an earlier
@@ -253,7 +258,21 @@ void main() {
 #endif
 
   // ── Biome pen (rock only) ─────────────────────────────────────────
-  int bi = uUseBiomes > 0.5 ? biomeId(vPosW.xz) : 0;
+  // A carried/pushed prop (a shard, a boulder) shares this material with
+  // the terrain, which samples biome BY WORLD POSITION so the ground reads
+  // consistently with its surroundings -- but that meant picking up a rock
+  // and walking it into a different biome visibly recoloured it, since its
+  // "biome" kept following wherever it currently was. uUseBiomeAnchor (set
+  // per-mesh by anchorHatch, only for props that asked for it, frozen to
+  // their spawn point) pins the sample instead. Instanced rocks are always
+  // real terrain that never moves, so they skip this and always use their
+  // live position -- also sidesteps them sharing rockMat's uniforms object.
+#ifdef USE_INSTANCE_HATCH
+  vec2 biomeAt = vPosW.xz;
+#else
+  vec2 biomeAt = uUseBiomeAnchor > 0.5 ? uBiomeAnchor : vPosW.xz;
+#endif
+  int bi = uUseBiomes > 0.5 ? biomeId(biomeAt) : 0;
   float hatchRange = uUseBiomes > 0.5 ? uPenA[bi].x : uHatchRange;
   // uShadowLift shrinks the flat-black cutoff toward 0: a live experiment
   // (tune panel) for "shading reads as darkness" -- 0 leaves every biome's
