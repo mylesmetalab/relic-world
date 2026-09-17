@@ -33,6 +33,9 @@ const staminaBar = stamina.firstElementChild as HTMLElement;
 const voiceBtn = document.getElementById("voice") as HTMLButtonElement;
 const screenshareBtn = document.getElementById("screenshare") as HTMLButtonElement;
 const screensharesEl = document.getElementById("screenshares") as HTMLDivElement;
+const gameAreaEl = document.getElementById("gameArea") as HTMLDivElement;
+const splitDividerEl = document.getElementById("splitDivider") as HTMLDivElement;
+const splitDockEl = document.getElementById("splitDock") as HTMLDivElement;
 const aimEl = document.getElementById("aim") as HTMLDivElement;
 
 // ── Which world ────────────────────────────────────────────────────────
@@ -153,19 +156,76 @@ async function boot(): Promise<void> {
     screenshareBtn.textContent = err ? `🖥️ ${err}` : on ? "🖥️ sharing (click to stop)" : "🖥️ share screen";
     screenshareBtn.classList.toggle("on", on);
   };
+  const shareName = (peerId: string): string => (peerId === net.selfId ? "You" : net.peers.get(peerId)?.state.n ?? "someone");
+
+  // ── Split view: one shared screen "docked" as its own resizable pane
+  // alongside the game, Chrome-split-view style — everyone else's shares
+  // (if any) stay as small floating tiles. `splitRatio` is the docked
+  // pane's width as a fraction of the window, dragged via #splitDivider. ──
+  let dockedId: string | null = null;
+  let splitRatio = 0.5;
+  const layoutSplit = (dockedVideo: HTMLVideoElement | null) => {
+    const on = dockedVideo != null;
+    splitDividerEl.hidden = !on;
+    splitDockEl.hidden = !on;
+    gameAreaEl.style.width = on ? `${splitRatio * 100}%` : "100%";
+    splitDividerEl.style.left = on ? `${splitRatio * 100}%` : "";
+    splitDockEl.style.left = on ? `${splitRatio * 100}%` : "";
+  };
   // Rebuilt (not diffed) each time: at most a handful of peers ever share at
-  // once, and this only runs on start/stop, never per frame.
+  // once, and this only runs on start/stop/dock, never per frame.
   screenShare.onIncomingChange = () => {
+    const shares = screenShare.list();
+    if (dockedId && !shares.some((s) => s.peerId === dockedId)) dockedId = null;
     screensharesEl.innerHTML = "";
-    for (const s of screenShare.list()) {
+    splitDockEl.innerHTML = "";
+    let dockedVideo: HTMLVideoElement | null = null;
+    for (const s of shares) {
+      if (s.peerId === dockedId) {
+        dockedVideo = s.video;
+        const bar = document.createElement("div");
+        bar.className = "shareBar";
+        const label = document.createElement("span");
+        label.textContent = `${shareName(s.peerId)}'s screen`;
+        const undock = document.createElement("button");
+        undock.textContent = "◱ float";
+        undock.addEventListener("click", (e) => { e.stopPropagation(); dockedId = null; screenShare.onIncomingChange?.(); });
+        bar.append(label, undock);
+        splitDockEl.append(bar, s.video);
+        continue;
+      }
       const tile = document.createElement("div");
       tile.className = "tile";
-      const label = document.createElement("b");
-      label.textContent = `${net.peers.get(s.peerId)?.state.n ?? "someone"}'s screen`;
-      tile.append(label, s.video);
+      const bar = document.createElement("div");
+      bar.className = "shareBar";
+      const label = document.createElement("span");
+      label.textContent = `${shareName(s.peerId)}'s screen`;
+      const dock = document.createElement("button");
+      dock.textContent = "⇔ split view";
+      dock.addEventListener("click", (e) => { e.stopPropagation(); dockedId = s.peerId; screenShare.onIncomingChange?.(); });
+      bar.append(label, dock);
+      tile.append(bar, s.video);
       screensharesEl.appendChild(tile);
     }
+    layoutSplit(dockedVideo);
   };
+  // Drag the divider to resize the split; the canvas follows every frame
+  // since resizePipeline already reads canvas.clientWidth/clientHeight live.
+  let dragging = false;
+  splitDividerEl.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    dragging = true;
+    splitDividerEl.classList.add("dragging");
+    splitDividerEl.setPointerCapture(e.pointerId);
+  });
+  splitDividerEl.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    splitRatio = Math.min(0.8, Math.max(0.2, e.clientX / window.innerWidth));
+    layoutSplit(splitDockEl.querySelector("video"));
+  });
+  const stopDragging = () => { dragging = false; splitDividerEl.classList.remove("dragging"); };
+  splitDividerEl.addEventListener("pointerup", stopDragging);
+  splitDividerEl.addEventListener("pointercancel", stopDragging);
   screenshareBtn.addEventListener("click", (e) => { e.stopPropagation(); void screenShare.toggle(); });
 
   // ── A wandering presence (brief 17): private/seeded worlds only, and a
@@ -487,7 +547,12 @@ async function boot(): Promise<void> {
   const mouseNdc = new THREE.Vector2(0, 0);
   window.addEventListener("mousemove", (e) => {
     if (input.locked || touch.enabled) return;
-    mouseNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    // Relative to the canvas's own box, not the window — normally the same
+    // thing, but split view (screen-share docked alongside the game) can
+    // leave the canvas narrower than the window, and the aim ray has to
+    // follow the actual rendered view, not the whole browser tab.
+    const rect = canvas.getBoundingClientRect();
+    mouseNdc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     aimEl.style.left = `${e.clientX}px`;
     aimEl.style.top = `${e.clientY}px`;
   });

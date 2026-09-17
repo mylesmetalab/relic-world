@@ -14,7 +14,15 @@
     <title>Relic World</title>
     <style>
       html, body { margin: 0; height: 100%; background: #0a0a12; overflow: hidden; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-      canvas#view { display: block; width: 100vw; height: 100vh; height: 100dvh; outline: none; touch-action: none; }
+      /* Everything but the split-view dock lives in here, so a docked share
+         (which shrinks this to a fraction of the window) carries all the
+         corner-anchored HUD panels along with the game view instead of
+         leaving them stranded over the shared screen. Same left/right/top/
+         bottom numbers as before `position: fixed` on the window — an
+         absolutely-positioned child of a `position: fixed; inset: 0` parent
+         resolves identically until the parent's own width changes. */
+      #gameArea { position: fixed; inset: 0; width: 100%; overflow: hidden; }
+      canvas#view { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
       /* Touch layer: a floating stick on the left, a button cluster on the right. */
       #touch { position: fixed; inset: 0; pointer-events: none; }
       #touch .stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border: 2px solid rgba(232,228,208,0.6); border-radius: 50%; background: rgba(10,10,18,0.25); }
@@ -30,27 +38,27 @@
       html.touch #hud { font-size: 11px; }
       html.touch #hint { font-size: 16px; }
       html.touch #tune { left: 8px; top: 8px; bottom: 8px; width: min(300px, 70vw); }
-      #hud { position: fixed; left: 12px; top: 12px; color: #e8e4d0; font: 12px/1.5 ui-monospace, Menlo, monospace; opacity: 0.85; pointer-events: none; text-shadow: 0 1px 0 #000; }
+      #hud { position: absolute; left: 12px; top: 12px; color: #e8e4d0; font: 12px/1.5 ui-monospace, Menlo, monospace; opacity: 0.85; pointer-events: none; text-shadow: 0 1px 0 #000; }
       #hud b { color: #f2f542; }
       #hud .peer { color: #46e0c8; }
-      #stamina { position: fixed; left: 12px; top: 72px; width: 120px; height: 8px; border: 1px solid #e8e4d0; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+      #stamina { position: absolute; left: 12px; top: 72px; width: 120px; height: 8px; border: 1px solid #e8e4d0; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
       #stamina.show { opacity: 0.9; }
       #stamina i { display: block; height: 100%; background: repeating-linear-gradient(-45deg, #f2f542 0 2px, transparent 2px 4px); }
-      #bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; padding: 8px 14px; background: rgba(10,10,18,0.78); border-top: 1px solid rgba(232,228,208,0.25); color: #e8e4d0; font: 12px/1.6 ui-monospace, Menlo, monospace; pointer-events: none; }
+      #bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; padding: 8px 14px; background: rgba(10,10,18,0.78); border-top: 1px solid rgba(232,228,208,0.25); color: #e8e4d0; font: 12px/1.6 ui-monospace, Menlo, monospace; pointer-events: none; }
       #bar b { color: #f2f542; font-weight: normal; }
       #bar button { pointer-events: auto; background: transparent; color: #e8e4d0; border: 1px solid rgba(232,228,208,0.4); font: inherit; padding: 0 8px; cursor: pointer; }
       #bar button.on { background: #f2f542; color: #0a0a12; border-color: #f2f542; }
       #tune .tune-check { display: block; margin: 4px 0 6px; }
-      #hint { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; color: #e8e4d0; font: 18px/1.7 ui-monospace, Menlo, monospace; background: rgba(10,10,18,0.55); cursor: pointer; }
+      #hint { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: #e8e4d0; font: 18px/1.7 ui-monospace, Menlo, monospace; background: rgba(10,10,18,0.55); cursor: pointer; }
       #hint small { display: block; font-size: 13px; opacity: 0.75; }
       #hint.hidden { display: none; }
-      #chat { position: fixed; left: 50%; bottom: 56px; transform: translateX(-50%); width: min(520px, 80vw); padding: 8px 12px; background: rgba(10,10,18,0.9); border: 1px solid #f2f542; color: #e8e4d0; font: 14px ui-monospace, Menlo, monospace; outline: none; }
-      #bubbles { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+      #chat { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); width: min(520px, 80vw); padding: 8px 12px; background: rgba(10,10,18,0.9); border: 1px solid #f2f542; color: #e8e4d0; font: 14px ui-monospace, Menlo, monospace; outline: none; }
+      #bubbles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
       .bubble { position: absolute; transform: translate(-50%, -100%); max-width: 260px; padding: 6px 10px; background: #e8e4d0; color: #0a0a12; font: 13px/1.35 ui-monospace, Menlo, monospace; border: 2px solid #0a0a12; box-shadow: 3px 3px 0 #0a0a12; word-wrap: break-word; white-space: pre-wrap; }
       .bubble::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 10px; height: 10px; background: #e8e4d0; border-right: 2px solid #0a0a12; border-bottom: 2px solid #0a0a12; transform: translateX(-50%) rotate(45deg); }
-      #toast { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); max-width: 260px; padding: 6px 10px; background: #e8e4d0; color: #0a0a12; font: 13px/1.35 ui-monospace, Menlo, monospace; border: 2px solid #0a0a12; box-shadow: 3px 3px 0 #0a0a12; text-align: center; pointer-events: none; }
+      #toast { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); max-width: 260px; padding: 6px 10px; background: #e8e4d0; color: #0a0a12; font: 13px/1.35 ui-monospace, Menlo, monospace; border: 2px solid #0a0a12; box-shadow: 3px 3px 0 #0a0a12; text-align: center; pointer-events: none; }
       #toast[hidden] { display: none; }
-      #photo { position: fixed; right: 12px; top: 12px; width: 240px; padding: 12px 14px; background: rgba(10,10,18,0.86); border: 1px solid rgba(232,228,208,0.35); color: #e8e4d0; font: 12px/1.6 ui-monospace, Menlo, monospace; }
+      #photo { position: absolute; right: 12px; top: 12px; width: 240px; padding: 12px 14px; background: rgba(10,10,18,0.86); border: 1px solid rgba(232,228,208,0.35); color: #e8e4d0; font: 12px/1.6 ui-monospace, Menlo, monospace; }
       #photo h2 { margin: 0 0 8px; font-size: 13px; color: #f2f542; }
       #photo h2 .k { float: right; color: #e8e4d0; opacity: 0.6; font-weight: normal; }
       #photo label { display: block; margin: 6px 0; }
@@ -60,8 +68,8 @@
       #photo .hint { margin: 6px 0 0; opacity: 0.6; }
       #photo hr { border: 0; border-top: 1px solid rgba(232,228,208,0.25); margin: 10px 0; }
       #photo label .k { float: right; opacity: 0.7; font-weight: normal; }
-      #map { position: fixed; right: 16px; bottom: 56px; width: min(46vh, 420px); height: min(46vh, 420px); image-rendering: pixelated; border: 2px solid #0a0a12; box-shadow: 4px 4px 0 #0a0a12; background: #e8e4d0; }
-      #tune { position: fixed; left: 12px; top: 96px; bottom: 56px; width: 300px; overflow-y: auto; padding: 10px 12px; background: rgba(10,10,18,0.9); border: 1px solid rgba(232,228,208,0.35); color: #e8e4d0; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+      #map { position: absolute; right: 16px; bottom: 56px; width: min(46vh, 420px); height: min(46vh, 420px); image-rendering: pixelated; border: 2px solid #0a0a12; box-shadow: 4px 4px 0 #0a0a12; background: #e8e4d0; }
+      #tune { position: absolute; left: 12px; top: 96px; bottom: 56px; width: 300px; overflow-y: auto; padding: 10px 12px; background: rgba(10,10,18,0.9); border: 1px solid rgba(232,228,208,0.35); color: #e8e4d0; font: 12px/1.5 ui-monospace, Menlo, monospace; }
       #tune h2 { margin: 0 0 6px; font-size: 13px; color: #f2f542; }
       #tune h2 .k { float: right; opacity: 0.6; font-weight: normal; color: #e8e4d0; }
       #tune .tune-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
@@ -99,34 +107,51 @@
       }
       #tune summary[data-tip] { border-bottom: none; }
       #tune summary[data-tip]:hover::after { top: 1.5em; }
-      #aim { position: fixed; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border: 2px solid #e8e4d0; border-radius: 50%; box-shadow: 0 0 0 1px rgba(10,10,18,0.7), inset 0 0 0 1px rgba(10,10,18,0.7); pointer-events: none; transition: transform 0.08s, background 0.08s; }
+      #aim { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border: 2px solid #e8e4d0; border-radius: 50%; box-shadow: 0 0 0 1px rgba(10,10,18,0.7), inset 0 0 0 1px rgba(10,10,18,0.7); pointer-events: none; transition: transform 0.08s, background 0.08s; }
       #aim.hot { background: #e8e4d0; transform: scale(1.25); }
       #aim.hold { border-color: #f2f542; background: transparent; transform: scale(1.5); }
-      #screenshares { position: fixed; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 8px; pointer-events: none; z-index: 20; }
+      #screenshares { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 8px; pointer-events: none; z-index: 20; }
       #screenshares .tile { width: min(280px, 32vw); background: rgba(10,10,18,0.9); border: 1px solid rgba(232,228,208,0.35); box-shadow: 4px 4px 0 rgba(10,10,18,0.4); }
-      #screenshares .tile b { display: block; padding: 4px 8px; font: 11px ui-monospace, Menlo, monospace; font-weight: normal; color: #f2f542; background: rgba(10,10,18,0.6); }
       #screenshares video { display: block; width: 100%; height: auto; background: #000; }
+      /* Shared by the floating tray's tile bar and the split-view dock's own
+         bar — same label + button-row look either way. */
+      .shareBar { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 4px 8px; font: 11px ui-monospace, Menlo, monospace; color: #f2f542; background: rgba(10,10,18,0.7); }
+      .shareBar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .shareBar button { pointer-events: auto; flex-shrink: 0; background: transparent; color: #e8e4d0; border: 1px solid rgba(232,228,208,0.4); font: 10px ui-monospace, Menlo, monospace; padding: 2px 7px; cursor: pointer; }
+      /* Split view: a shared screen docked as its own pane, resized by
+         dragging the divider — the game itself lives in #gameArea, which
+         shrinks to make room (see its own comment above). */
+      #splitDivider { position: fixed; top: 0; bottom: 0; width: 8px; margin-left: -4px; background: rgba(232,228,208,0.3); cursor: col-resize; z-index: 25; }
+      #splitDivider:hover, #splitDivider.dragging { background: #f2f542; }
+      #splitDivider[hidden] { display: none; }
+      #splitDock { position: fixed; top: 0; right: 0; bottom: 0; display: flex; flex-direction: column; background: #000; z-index: 20; }
+      #splitDock[hidden] { display: none; }
+      #splitDock video { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; }
     </style>
   </head>
   <body>
-    <canvas id="view" tabindex="0"></canvas>
-    <div id="bubbles"></div>
-    <div id="toast" hidden></div>
-    <div id="aim"></div>
-    <div id="stamina"><i></i></div>
-    <div id="hud"></div>
-    <div id="screenshares"></div>
-    <div id="photo" hidden></div>
-    <div id="tune" hidden></div>
-    <canvas id="map" hidden></canvas>
-    <input id="chat" type="text" maxlength="120" placeholder="say something… (Enter to send, Esc to cancel)" autocomplete="off" hidden />
-    <div id="bar">
-      <span><b>WASD</b> move</span><span><b>Shift</b> run</span><span><b>Space</b> jump</span>
-      <span><b>push a ledge</b> climb</span><span><b>two-finger swipe</b> / <b>arrows</b> / <b>right-drag</b> look · <b>L</b> lock mouse</span><span><b>V</b> 1st / 3rd person</span>
-      <span><b>C</b> / <b>⇧C</b> character</span><span><b>Q</b> / <b>E</b> inks</span><span><b>F</b> grab · <b>click</b> throw / dig</span><span><b>H</b> hold torch</span><span><b>X</b> place torch</span><span><b>G</b> spawn relic</span><span><b>Tab</b> map</span><span><b>Enter</b> chat</span>
-      <span><b>P</b> photo mode</span><span><b>M</b> mute</span><button id="voice" title="Proximity voice chat — opt in; your mic goes to players near you">🎤 voice off</button><button id="screenshare" title="Share your screen — opt in; pick a screen/window/tab and everyone in the room sees it, no matter how far you wander">🖥️ share screen</button><button id="tuneBtn" title="Tuning panel — every number the look and world are built from (also the ` key)">⚙ tune</button><span><b>R</b> new seed</span><span><b>T</b> spawn</span>
+    <div id="gameArea">
+      <canvas id="view" tabindex="0"></canvas>
+      <div id="bubbles"></div>
+      <div id="toast" hidden></div>
+      <div id="aim"></div>
+      <div id="stamina"><i></i></div>
+      <div id="hud"></div>
+      <div id="screenshares"></div>
+      <div id="photo" hidden></div>
+      <div id="tune" hidden></div>
+      <canvas id="map" hidden></canvas>
+      <input id="chat" type="text" maxlength="120" placeholder="say something… (Enter to send, Esc to cancel)" autocomplete="off" hidden />
+      <div id="bar">
+        <span><b>WASD</b> move</span><span><b>Shift</b> run</span><span><b>Space</b> jump</span>
+        <span><b>push a ledge</b> climb</span><span><b>two-finger swipe</b> / <b>arrows</b> / <b>right-drag</b> look · <b>L</b> lock mouse</span><span><b>V</b> 1st / 3rd person</span>
+        <span><b>C</b> / <b>⇧C</b> character</span><span><b>Q</b> / <b>E</b> inks</span><span><b>F</b> grab · <b>click</b> throw / dig</span><span><b>H</b> hold torch</span><span><b>X</b> place torch</span><span><b>G</b> spawn relic</span><span><b>Tab</b> map</span><span><b>Enter</b> chat</span>
+        <span><b>P</b> photo mode</span><span><b>M</b> mute</span><button id="voice" title="Proximity voice chat — opt in; your mic goes to players near you">🎤 voice off</button><button id="screenshare" title="Share your screen — opt in; pick a screen/window/tab and everyone in the room sees it, no matter how far you wander">🖥️ share screen</button><button id="tuneBtn" title="Tuning panel — every number the look and world are built from (also the ` key)">⚙ tune</button><span><b>R</b> new seed</span><span><b>T</b> spawn</span>
+      </div>
+      <div id="hint">click to enter<small class="kb">two-finger swipe, arrow keys or right-drag to look — or press L to lock the mouse · everyone shares the cave · rock prints as your torch reaches it</small><small class="tc" hidden>left thumb moves · right thumb looks · tap digs, hold keeps digging · everyone shares the cave</small></div>
     </div>
-    <div id="hint">click to enter<small class="kb">two-finger swipe, arrow keys or right-drag to look — or press L to lock the mouse · everyone shares the cave · rock prints as your torch reaches it</small><small class="tc" hidden>left thumb moves · right thumb looks · tap digs, hold keeps digging · everyone shares the cave</small></div>
+    <div id="splitDivider" hidden></div>
+    <div id="splitDock" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

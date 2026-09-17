@@ -1470,6 +1470,47 @@ wiring, solo-mode hiding, and the graceful "screen share unavailable"
 error path all confirmed — the actual OS screen-picker can't be driven
 headlessly); pushed to `origin/main`.
 
+### Forty-first pass (2026-09-17): screen share gets a resizable split view, and the sharer sees their own screen
+Two follow-ups on the fortieth pass's screen share. First, Myles asked for
+a Chrome-split-view-style mode: the shared screen at 50% of the window,
+the game at the other 50%, resizable. Second: the person sharing had no
+feedback at all about what they were actually sending — no self-preview,
+unlike Zoom's own thumbnail while presenting.
+
+Self-preview: `ScreenShare` now also wraps its own outgoing `stream` in a
+local `<video>`, folded into `list()` under `net.selfId` so the HUD treats
+it exactly like a peer's tile (own tile first, then peers').
+
+Split view needed a real layout, not just a bigger tile: `index.html`'s
+body now wraps every fixed-position HUD element (`#hud`, `#bar`, `#tune`,
+`#photo`, `#map`, `#aim`, `#hint`, `#chat`, `#bubbles`, `#toast`,
+`#screenshares`) in a new `#gameArea` div and switches them from
+`position: fixed` to `position: absolute` (same left/right/top/bottom
+numbers either way, since `#gameArea` itself is `fixed; inset: 0`) — so
+when a share is "docked" and `#gameArea` shrinks to a fraction of the
+window, every HUD panel shrinks with it instead of half of them (the map,
+photo panel) getting stranded over the shared screen on the right. A new
+`#splitDivider` (drag to resize, clamped 20-80%) and `#splitDock` (the
+docked video's own pane) sit outside `#gameArea` as siblings. Each tile
+(the tray's floating ones and the dock's own) gets a `.shareBar` with a
+label and a **⇔ split view** / **◱ float** button to move a share between
+the tray and the dock; only one can be docked at a time.
+
+The one real gotcha: `resizePipeline` already reads `canvas.clientWidth/
+clientHeight` fresh every frame (main.ts's frame loop, not a resize-event
+listener), so shrinking `#gameArea`'s CSS width was enough on its own to
+resize the actual 3D render — confirmed directly (a synthetic
+`canvas.captureStream()` video docked via devtools, `view.clientWidth`
+read back as exactly half the window, then as exactly the dragged pixel
+position). What DID need a real fix: the aim ray's `mouseNdc` was computed
+from `window.innerWidth/innerHeight`, which is wrong once the canvas is
+narrower than the window (free-look aiming would drift toward the split
+boundary instead of the actual crosshair) — switched to the canvas's own
+`getBoundingClientRect()`. Verified the full layout end-to-end with the
+synthetic stream: game and dock side by side, aim reticle correctly
+centred in the game pane (not the window), dragging the divider live-
+resizing the canvas. Typecheck clean; pushed to `origin/main`.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static
