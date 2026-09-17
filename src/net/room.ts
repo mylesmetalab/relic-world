@@ -97,6 +97,12 @@ export class Net {
   /** True when running without a room at all (single player). */
   readonly solo: boolean;
 
+  /** Voice and screen-share both ride trystero's one `room.onPeerStream`
+   *  slot, tagged apart by `addStream`'s metadata ("voice" / "screen") — a
+   *  single assignable callback can't serve two independent features, so
+   *  `Net` fans it out to whoever registered via `onPeerStream` below. */
+  private readonly streamListeners: Array<(stream: MediaStream, peerId: string, metadata?: unknown) => void> = [];
+
   /** `solo` skips the relays entirely: same API, nothing ever goes out or
    *  comes in. Used on hosts whose CSP blocks the relays (Metalab Sites). */
   constructor(seed: number, roomOverride?: string, solo = false) {
@@ -110,6 +116,9 @@ export class Net {
             console.warn("[relic-world] relay join error", err);
           },
         });
+    this.room.onPeerStream = (stream, peerId, metadata) => {
+      for (const cb of this.streamListeners) cb(stream, peerId, metadata);
+    };
     this.state = this.room.makeAction<PeerState>("state");
     this.state.onMessage = (data, ctx) => {
       const id = ctx.peerId;
@@ -143,6 +152,13 @@ export class Net {
     // requestAnimationFrame, but its timer still fires (~1 Hz), so a player
     // who alt-tabs stays standing in everyone else's cave instead of vanishing.
     this.timer = setInterval(() => this.tick(), 1000 / 12);
+  }
+
+  /** Register for incoming media streams (voice, screen-share, ...) — see
+   *  `streamListeners` above for why this fans out instead of being a plain
+   *  nullable callback like the rest of this class's events. */
+  onPeerStream(cb: (stream: MediaStream, peerId: string, metadata?: unknown) => void): void {
+    this.streamListeners.push(cb);
   }
 
   /** Provide the local state; the heartbeat timer reads it. */

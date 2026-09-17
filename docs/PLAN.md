@@ -1427,6 +1427,49 @@ frozen-frame pixel sampling, this time driving the real DOM slider, and
 confirmed a clearly visible dot texture appears in shadowed areas.
 Typecheck clean; pushed to `origin/main` and republished.
 
+### Fortieth pass (2026-09-17): GitHub Pages back up (repo now public), and screen sharing
+Myles wanted to play with a friend right now and couldn't see them in his
+seed — turned out unrelated to the seed at all: `main.ts`'s `solo` check
+force-disables multiplayer on `sites.metalab.com` specifically, because
+that host's CSP blocks the WebRTC signalling relays (a pre-existing,
+deliberate fallback, not a regression). The repo's own `pages` workflow
+existed but was disabled, and GitHub Pages for a private repo needs a paid
+plan this account doesn't have — `POST .../pages` confirmed that directly
+("Your current plan does not support GitHub Pages for this repository").
+Myles chose to make the repo public over upgrading; re-enabled the
+workflow, created the Pages site via the API, and triggered a deploy —
+confirmed live at `https://mylesmetalab.github.io/relic-world/` with
+`window.__world.net.solo === false`, unlike the Metalab Sites build.
+
+Screen sharing followed the same shape as the existing opt-in voice chat
+(`src/net/voice.ts`): `getDisplayMedia` captures a screen/window/tab only
+on a button click, sent to peers over the same trystero room voice already
+uses. The one real wrinkle: trystero's `room.onPeerStream` is a single
+assignable callback, and voice already owned it — a second feature can't
+just reassign it without breaking the first. Fixed properly rather than
+worked around: `Net` now owns that one slot and fans it out to a list of
+registered listeners (`net.onPeerStream(cb)`), with `addStream`'s
+`metadata` field ("voice" / "screen") telling each listener which streams
+are actually theirs — voice already ignores anything tagged "screen" so a
+shared screen can never end up wired into the spatial-audio graph. Found
+and fixed a real latent bug in the same spot while there: voice's late-
+joiner resend used `{ peers: peerId } as never`, but trystero's actual
+option key is `target`, not `peers` — the cast was silently hiding a
+mistargeted (over-broad, if harmless) send.
+
+Unlike voice, a shared screen isn't proximity-gated: it stays visible to
+everyone in the room regardless of distance, rendered as a labelled tile
+in a fixed top-right tray (`#screenshares` in `index.html`) rather than
+anything in-world, since the point is watching it *while* moving
+independently, not walking up to it. The browser's own "Stop sharing" bar
+ends the track same as the in-game button (listened for via the track's
+own `ended` event on both the sharer's and each viewer's side), so state
+never gets stuck out of sync with the real capture. Typecheck clean;
+verified end-to-end in the browser as far as the sandbox allows (button
+wiring, solo-mode hiding, and the graceful "screen share unavailable"
+error path all confirmed — the actual OS screen-picker can't be driven
+headlessly); pushed to `origin/main`.
+
 ## Milestones
 
 - **M0 — pipeline in a room.** Renderer + materials + press pass on a static

@@ -17,6 +17,7 @@ import { Sound } from "./audio/sound";
 import { Net, type DigMsg, type PresenceMsg } from "./net/room";
 import { Presence, findPresenceSpawn } from "./world/presence";
 import { Voice } from "./net/voice";
+import { ScreenShare } from "./net/screenshare";
 import { PhotoMode } from "./ui/photo";
 import { Chat } from "./ui/chat";
 import { Tune, applyBiomeDoc } from "./ui/tune";
@@ -30,6 +31,8 @@ const hint = document.getElementById("hint") as HTMLDivElement;
 const stamina = document.getElementById("stamina") as HTMLDivElement;
 const staminaBar = stamina.firstElementChild as HTMLElement;
 const voiceBtn = document.getElementById("voice") as HTMLButtonElement;
+const screenshareBtn = document.getElementById("screenshare") as HTMLButtonElement;
+const screensharesEl = document.getElementById("screenshares") as HTMLDivElement;
 const aimEl = document.getElementById("aim") as HTMLDivElement;
 
 // ── Which world ────────────────────────────────────────────────────────
@@ -117,8 +120,9 @@ async function boot(): Promise<void> {
 
   const torchPos = new THREE.Vector3(0, 5, 0);
   const net = new Net(seed, roomOverride, solo);
-  if (solo) voiceBtn.hidden = true;
+  if (solo) { voiceBtn.hidden = true; screenshareBtn.hidden = true; }
   const voice = new Voice(net);
+  const screenShare = new ScreenShare(net);
   const remotes = new Map<string, Remote>();
   net.onJoin = (id) => {
     const r: Remote = { figure: new Figure(p), pos: new THREE.Vector3(), facing: 0, torch: new THREE.Vector3(), speed: 0, loading: null, talking: false };
@@ -127,6 +131,7 @@ async function boot(): Promise<void> {
     r.torch.set(...st.t);
     remotes.set(id, r);
     voice.peerJoined(id);
+    screenShare.peerJoined(id);
     applyConfig(p);
     // Bring the newcomer up to date with what I have dug and placed.
     for (const d of myDigs) net.sendDig(d);
@@ -136,6 +141,7 @@ async function boot(): Promise<void> {
     remotes.get(id)?.figure.dispose();
     remotes.delete(id);
     voice.peerLeft(id);
+    screenShare.peerLeft(id);
   };
   window.addEventListener("beforeunload", () => net.leave());
   voice.onChange = (on, err) => {
@@ -143,6 +149,24 @@ async function boot(): Promise<void> {
     voiceBtn.classList.toggle("on", on);
   };
   voiceBtn.addEventListener("click", (e) => { e.stopPropagation(); void voice.toggle(); });
+  screenShare.onChange = (on, err) => {
+    screenshareBtn.textContent = err ? `🖥️ ${err}` : on ? "🖥️ sharing (click to stop)" : "🖥️ share screen";
+    screenshareBtn.classList.toggle("on", on);
+  };
+  // Rebuilt (not diffed) each time: at most a handful of peers ever share at
+  // once, and this only runs on start/stop, never per frame.
+  screenShare.onIncomingChange = () => {
+    screensharesEl.innerHTML = "";
+    for (const s of screenShare.list()) {
+      const tile = document.createElement("div");
+      tile.className = "tile";
+      const label = document.createElement("b");
+      label.textContent = `${net.peers.get(s.peerId)?.state.n ?? "someone"}'s screen`;
+      tile.append(label, s.video);
+      screensharesEl.appendChild(tile);
+    }
+  };
+  screenshareBtn.addEventListener("click", (e) => { e.stopPropagation(); void screenShare.toggle(); });
 
   // ── A wandering presence (brief 17): private/seeded worlds only, and a
   // CFG kill switch on top of that, so it can be turned off without a

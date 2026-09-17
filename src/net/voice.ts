@@ -22,7 +22,13 @@ export class Voice {
   onChange: ((enabled: boolean, error?: string) => void) | null = null;
 
   constructor(private readonly net: Net) {
-    net.room.onPeerStream = (stream, peerId) => this.attach(peerId, stream);
+    // Screen-share rides the same trystero stream slot (see Net.onPeerStream)
+    // — ignore anything tagged "screen" so a shared screen never ends up
+    // wired into the spatial-audio graph as if it were a mic.
+    net.onPeerStream((stream, peerId, metadata) => {
+      if (metadata === "screen") return;
+      this.attach(peerId, stream);
+    });
   }
 
   async toggle(): Promise<void> {
@@ -37,7 +43,7 @@ export class Voice {
       return;
     }
     this.enabled = true;
-    void Promise.allSettled(this.net.room.addStream(this.stream));
+    void Promise.allSettled(this.net.room.addStream(this.stream, { metadata: "voice" }));
     this.onChange?.(true);
   }
 
@@ -53,7 +59,7 @@ export class Voice {
 
   /** Late joiner: send my stream to a peer that arrived after I enabled. */
   peerJoined(peerId: string): void {
-    if (this.enabled && this.stream) void Promise.allSettled(this.net.room.addStream(this.stream, { peers: peerId } as never));
+    if (this.enabled && this.stream) void Promise.allSettled(this.net.room.addStream(this.stream, { target: peerId, metadata: "voice" }));
   }
 
   peerLeft(peerId: string): void {

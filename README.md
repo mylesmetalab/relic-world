@@ -30,6 +30,7 @@ Click to take the mouse.
 | **Enter** | chat — what you type streams above your figure as you type; Enter sends, Esc cancels |
 | **\`** | the tuning panel — every number the look and the world are built from; Export gives JSON to paste back, Copy link shares a `?cfg=` URL |
 | **🎤** | proximity voice, opt in — your mic goes to players near you, fading with distance |
+| **🖥️** | share your screen, opt in — pick a screen/window/tab and it shows as a tile for everyone in the room, not proximity-gated (unlike voice — a shared screen stays visible no matter how far anyone wanders) |
 | **P** | photo mode — orbit, press controls, PNG export at print sizes, and a comic page (Add panel × up to 3, Make page) |
 | **M** | mute |
 | **R** / **T** | new seed · back to spawn |

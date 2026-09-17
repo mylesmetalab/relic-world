@@ -102,6 +102,10 @@
       #aim { position: fixed; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border: 2px solid #e8e4d0; border-radius: 50%; box-shadow: 0 0 0 1px rgba(10,10,18,0.7), inset 0 0 0 1px rgba(10,10,18,0.7); pointer-events: none; transition: transform 0.08s, background 0.08s; }
       #aim.hot { background: #e8e4d0; transform: scale(1.25); }
       #aim.hold { border-color: #f2f542; background: transparent; transform: scale(1.5); }
+      #screenshares { position: fixed; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 8px; pointer-events: none; z-index: 20; }
+      #screenshares .tile { width: min(280px, 32vw); background: rgba(10,10,18,0.9); border: 1px solid rgba(232,228,208,0.35); box-shadow: 4px 4px 0 rgba(10,10,18,0.4); }
+      #screenshares .tile b { display: block; padding: 4px 8px; font: 11px ui-monospace, Menlo, monospace; font-weight: normal; color: #f2f542; background: rgba(10,10,18,0.6); }
+      #screenshares video { display: block; width: 100%; height: auto; background: #000; }
     </style>
   </head>
   <body>
@@ -111,6 +115,7 @@
     <div id="aim"></div>
     <div id="stamina"><i></i></div>
     <div id="hud"></div>
+    <div id="screenshares"></div>
     <div id="photo" hidden></div>
     <div id="tune" hidden></div>
     <canvas id="map" hidden></canvas>
@@ -119,7 +124,7 @@
       <span><b>WASD</b> move</span><span><b>Shift</b> run</span><span><b>Space</b> jump</span>
       <span><b>push a ledge</b> climb</span><span><b>two-finger swipe</b> / <b>arrows</b> / <b>right-drag</b> look · <b>L</b> lock mouse</span><span><b>V</b> 1st / 3rd person</span>
       <span><b>C</b> / <b>⇧C</b> character</span><span><b>Q</b> / <b>E</b> inks</span><span><b>F</b> grab · <b>click</b> throw / dig</span><span><b>H</b> hold torch</span><span><b>X</b> place torch</span><span><b>G</b> spawn relic</span><span><b>Tab</b> map</span><span><b>Enter</b> chat</span>
-      <span><b>P</b> photo mode</span><span><b>M</b> mute</span><button id="voice" title="Proximity voice chat — opt in; your mic goes to players near you">🎤 voice off</button><button id="tuneBtn" title="Tuning panel — every number the look and world are built from (also the ` key)">⚙ tune</button><span><b>R</b> new seed</span><span><b>T</b> spawn</span>
+      <span><b>P</b> photo mode</span><span><b>M</b> mute</span><button id="voice" title="Proximity voice chat — opt in; your mic goes to players near you">🎤 voice off</button><button id="screenshare" title="Share your screen — opt in; pick a screen/window/tab and everyone in the room sees it, no matter how far you wander">🖥️ share screen</button><button id="tuneBtn" title="Tuning panel — every number the look and world are built from (also the ` key)">⚙ tune</button><span><b>R</b> new seed</span><span><b>T</b> spawn</span>
     </div>
     <div id="hint">click to enter<small class="kb">two-finger swipe, arrow keys or right-drag to look — or press L to lock the mouse · everyone shares the cave · rock prints as your torch reaches it</small><small class="tc" hidden>left thumb moves · right thumb looks · tap digs, hold keeps digging · everyone shares the cave</small></div>
     <script type="module" src="/src/main.ts"></script>
